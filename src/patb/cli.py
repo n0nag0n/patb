@@ -20,22 +20,23 @@ from patb.store import KINDS, Store
 from patb.tick import due_jobs, install_crontab, tick as run_tick, uninstall_crontab
 
 
-USAGE = """patb — query one decision at a time.
+USAGE = """patb — look up one standing instruction (not the whole catalog).
 
   patb get KEY                 exact key or alias; prints that body
   patb search "family link"    alias, then keywords
   patb query --domain email --tag silent-delete
-  patb due                     jobs tick would fire now
-  patb tick                    no LLM; webhook/exec due jobs (crontab)
   patb set KEY --kind policy --body "..."
   patb propose / patb accept   candidates → locked
   patb secret set NAME         value on stdin; never in markdown
   patb reindex                 vault markdown → sqlite
   patb dump / patb import      JSONL belt (no secret values)
   patb core                    paste this into every agent profile
-  patb cron install            user crontab: * * * * * patb tick
 
-Before you act, query patb. You may call it many times. Do not dump the catalog.
+Grok Bot clock: a Grok routine per job whose prompt is only
+  patb get job.<name>
+Do not schedule 'patb due' every minute.
+
+Linux clock (has crontab): patb tick / patb cron install
 """
 
 
