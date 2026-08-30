@@ -2,7 +2,7 @@
 
 **A filing cabinet for AI teammates.** You stop stuffing 150 rules into a Grok Bot profile. The bot looks up the one rule it needs.
 
-If you run Grok Bot (or OpenClaw, Hermes, nanobot) and you keep repeating “always trash USPS, never mention it” — and the bot still mentions it — this repo is for you.
+If you run Grok Bot (or OpenClaw, Hermes, nanobot) and you keep repeating a rule like an email rule for “forward emails from Bob to Joe” — and the bot still asks what to do with it  — this repo is for you.
 
 ## Why this exists
 
@@ -10,11 +10,11 @@ A bot’s profile is like working memory. It is tiny and unreliable once you put
 
 What actually happens:
 
-1. You teach Inbox Curator how to handle USPS, Family Link, Wordfence, bills, GitHub, Telegram.
+1. You teach a bot like an Inbox Curator how to handle invoices, bills, GitHub, retail stores, etc.
 2. Those instructions live in the profile, or in a heartbeat prompt, or in three slightly different copies.
 3. The model wades through the blob, drops a line, and you spend the next hour correcting it.
 
-**patb** puts each decision in its own record on the bot’s computer. The profile stays a few lines: *before you act, run `patb`*. When a USPS email shows up, the bot runs `patb search usps` and gets one paragraph: trash it, do not mention it. Family Link is a different lookup. GitHub rules never load during mail.
+**patb** puts each decision in its own record on the bot’s computer. The profile stays a few lines: *before you act, run `patb`*. When a retail email shows up, the bot runs `patb search retail` and gets one paragraph: trash it, do not mention it. Github emails are a different lookup. invoice rules shouldn't load during Github mail.
 
 Same idea as a person who does not recite their tax history every morning. They know the cabinet exists, and they open the right folder.
 
@@ -109,8 +109,8 @@ Stay quiet unless there are hot candidates. Never edit CORE.
 
 | You want | You run / you tell the bot |
 |---|---|
-| The USPS rule | `patb get email.usps` |
-| “What do I do with Family Link?” | `patb search "family link"` |
+| The retail rule | `patb get email.retail` |
+| “What do I do with Family Link emails?” | `patb search "family link"` |
 | “What size were those tires on the Cadenza?” | `patb search "tire size cadenza"` (keywords, not the full sentence) |
 | Every silent-delete mail rule | `patb query --domain email --tag silent-delete` |
 | Add or change a rule | `patb set …` or edit the markdown, then `patb` |
@@ -168,4 +168,4 @@ Locked policies do not fade. A bill you pay once a year must not fall out becaus
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-The name is a Pinky and the Brain joke for humans. Agents only ever see the command `patb`.
+The name is a Pinky and the Brain joke for humans. Classic cartoon I watched as a kid. Agents only ever see the command `patb`.
