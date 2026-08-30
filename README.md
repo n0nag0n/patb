@@ -127,7 +127,7 @@ The bot may call `patb` many times in one task. That is the point: fetch this st
 
 ## Linux / OpenClaw / a box with crontab
 
-On a normal Linux user account, `patb tick` can be the clock (Python only — no model). Idle minutes cost nothing; when a job is due it can POST a webhook or run a command.
+On a normal Linux user account, `patb tick` can be the clock (Python only — no model). Idle minutes cost nothing; when a job is due it can POST a webhook or run a command. Webhooks must be public `https` (no redirects, no localhost). `notify: exec` may only run `patb consolidate` (or `reindex`, `audit`, `due`, `core`) — no other binaries.
 
 ```bash
 ./install.sh --yes --cron
@@ -143,7 +143,7 @@ Each decision is **one record** (key + the text the bot should obey).
 
 - **Markdown** under `$PATB_HOME/vault/` is what you commit to a **private** git repo. Survives the computer dying.
 - **SQLite** (`$PATB_HOME/index.sqlite`) is the live index `get`/`search`/`query` hit. Rebuilt with `patb reindex`. Do not commit it.
-- **Secrets** (`$PATB_HOME/secrets.env`) never go in git. Store with `patb secret set NAME` (value on stdin), then put `${NAME}` in the record. `patb get` expands it. There is no `patb secret get`. Do not read `secrets.env`. `patb search` and `patb query` (including `--full`) leave `${NAME}` as a placeholder.
+- **Secrets** (`$PATB_HOME/secrets.env`) never go in git. Mode `0600`. `$PATB_HOME` is `0700`. Store with `patb secret set NAME` (value on stdin), then put `${NAME}` in the record. `patb get` expands it. There is no `patb secret get`. Do not read `secrets.env`. `patb search` and `patb query` (including `--full`) leave `${NAME}` as a placeholder.
 
 Pattern:
 
@@ -182,7 +182,7 @@ Locked policies do not fade. A bill you pay once a year must not fall out becaus
 | `patb set` / `propose` / `accept` | Write a record; candidates need you to accept |
 | `patb secret set NAME` | Value on stdin. Retrieve with `patb get` on the record that has `${NAME}`. No `patb secret get`, no dump of values |
 | `patb reindex` | Vault → sqlite |
-| `patb dump` / `import` | JSONL backup (no secret values) |
+| `patb dump` / `import` | JSONL backup (placeholders; omits private unless `--include-private`) |
 | `patb core` | Versioned profile block |
 | `patb due` / `tick` | Linux clock (not Grok Bot) |
 | `patb audit` | Fail if tokens leaked into markdown |

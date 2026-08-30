@@ -6,7 +6,6 @@ import json
 import os
 import shlex
 import subprocess
-import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -15,6 +14,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from patb.cronexpr import CronError, matches
+from patb.guard import GuardError, check_webhook_url, exec_argv
 from patb.paths import Paths
 from patb.secrets import load
 from patb.store import Store
@@ -26,6 +26,14 @@ except ImportError:  # pragma: no cover
 
 
 Poster = Callable[[str, dict[str, str], bytes], tuple[int, str]]
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        raise urllib.error.HTTPError(req.full_url, code, "redirect disallowed", headers, fp)
+
+
+_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 def _now_in(tz_name: str | None) -> datetime:
@@ -51,9 +59,12 @@ def acquire_lock(lock_path: Path):
 
 
 def _default_poster(url: str, headers: dict[str, str], body: bytes) -> tuple[int, str]:
+    err = check_webhook_url(url, resolve_host=True)
+    if err:
+        return 0, err
     req = urllib.request.Request(url, data=body, method="POST", headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with _NO_REDIRECT_OPENER.open(req, timeout=8) as resp:
             return resp.status, resp.read()[:200].decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         return exc.code, str(exc.reason)
@@ -123,17 +134,18 @@ def fire_job(
     store.stamp_last_run(job["key"], stamp)
     if notify == "exec":
         cmd = job.get("exec_cmd") or ""
-        if not cmd:
-            return {"key": job["key"], "ok": False, "error": "no exec"}
+        try:
+            argv = exec_argv(cmd)
+        except GuardError as exc:
+            return {"key": job["key"], "ok": False, "error": str(exc)}
         try:
             env = os.environ.copy()
             env["PATB_JOB_KEY"] = job["key"]
+            env["PATB_HOME"] = str(store.paths.home)
             src = str(Path(__file__).resolve().parents[1])
             env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
-            if cmd.startswith("patb "):
-                cmd = f"{sys.executable} -m patb " + cmd[5:]
             proc = subprocess.run(
-                shlex.split(cmd),
+                argv,
                 check=False,
                 capture_output=True,
                 text=True,
@@ -151,6 +163,9 @@ def fire_job(
     url, token = _secret_map(store, job, secrets)
     if not url:
         return {"key": job["key"], "ok": False, "error": "missing webhook url secret"}
+    url_err = check_webhook_url(url, resolve_host=False)
+    if url_err:
+        return {"key": job["key"], "ok": False, "error": url_err}
     headers = {"content-type": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -184,7 +199,9 @@ def tick(
 
 
 def crontab_line(patb_bin: str) -> str:
-    return f"* * * * * {patb_bin} tick >/dev/null 2>&1"
+    if any(ch in patb_bin for ch in "\n\r"):
+        raise RuntimeError("invalid patb bin path")
+    return f"* * * * * {shlex.quote(patb_bin)} tick >/dev/null 2>&1"
 
 
 def install_crontab(patb_bin: str) -> str:

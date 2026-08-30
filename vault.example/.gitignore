@@ -1,3 +1,4 @@
 private/
 *.sqlite
+*.sqlite-*
 secrets.env

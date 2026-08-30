@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from patb import frontmatter
+from patb.guard import GuardError, chmod_private, confine_to_dir, exec_argv, iter_vault_markdown, valid_key
 from patb.paths import Paths
 from patb.secrets import looks_like_raw_secret
 
@@ -278,9 +279,12 @@ def _fts_match(tokens: list[str], op: str = "AND") -> str:
 
 
 def record_path(vault: Path, rec: dict[str, Any]) -> Path:
-    key = rec["key"]
+    key = valid_key(rec["key"])
     kind = rec.get("kind") or "policy"
     sensitivity = rec.get("sensitivity") or "public"
+    agent_key = rec.get("agent_key")
+    if agent_key:
+        valid_key(str(agent_key), label="agent_key")
     parts = key.split(".")
     if kind == "protocol":
         rel = Path("protocols") / ".".join(parts[1:] or parts)
@@ -333,10 +337,12 @@ def record_to_meta(rec: dict[str, Any], aliases: list[str], tags: list[str]) -> 
 
 def write_markdown(vault: Path, rec: dict[str, Any], aliases: list[str], tags: list[str]) -> Path:
     path = record_path(vault, rec)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    confined = confine_to_dir(vault, path)
+    confined.parent.mkdir(parents=True, exist_ok=True)
+    confined = confine_to_dir(vault, confined)
     text = frontmatter.dump(record_to_meta(rec, aliases, tags), rec.get("body") or "")
-    path.write_text(text, encoding="utf-8")
-    return path
+    confined.write_text(text, encoding="utf-8")
+    return confined
 
 
 class Store:
@@ -347,6 +353,10 @@ class Store:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.execute("PRAGMA journal_mode = WAL")
+        chmod_private(paths.sqlite, 0o600)
+        for extra in (Path(str(paths.sqlite) + "-wal"), Path(str(paths.sqlite) + "-shm")):
+            if extra.exists():
+                chmod_private(extra, 0o600)
         self._init_schema()
 
     def close(self) -> None:
@@ -383,7 +393,11 @@ class Store:
         if not vault.exists():
             return False
         newest = 0.0
-        for p in vault.rglob("*.md"):
+        try:
+            md_iter = list(iter_vault_markdown(vault))
+        except GuardError:
+            md_iter = []
+        for p in md_iter:
             try:
                 newest = max(newest, p.stat().st_mtime)
             except OSError:
@@ -406,13 +420,11 @@ class Store:
         count = 0
         vault = self.paths.vault
         if vault.exists():
-            for path in sorted(vault.rglob("*.md")):
-                if path.name.lower() == "core.md":
-                    continue
+            for path in iter_vault_markdown(vault):
                 try:
                     self._index_file(path, runtime)
                     count += 1
-                except (frontmatter.FrontmatterError, ValueError) as exc:
+                except (frontmatter.FrontmatterError, ValueError, GuardError) as exc:
                     raise ValueError(f"{path}: {exc}") from exc
         self._load_relations_file()
         self.conn.commit()
@@ -427,19 +439,20 @@ class Store:
     def _index_file(self, path: Path, runtime: dict[str, dict[str, Any]]) -> None:
         text = path.read_text(encoding="utf-8")
         meta, body = frontmatter.parse(text)
-        key = str(meta.get("key") or "").strip()
-        if not key:
-            raise ValueError("missing key")
+        key = valid_key(str(meta.get("key") or "").strip())
         kind = str(meta.get("kind") or "policy")
         if kind not in KINDS:
             raise ValueError(f"unknown kind {kind}")
+        reason = looks_like_raw_secret(text)
+        if reason:
+            raise ValueError(reason)
         rec = {
             "key": key,
             "kind": kind,
             "domain": meta.get("domain"),
             "summary": meta.get("summary"),
             "body": body,
-            "path": str(path.relative_to(self.paths.vault)),
+            "path": str(confine_to_dir(self.paths.vault, path).relative_to(self.paths.vault.resolve())),
             "hash": _hash(text),
             "schedule": meta.get("schedule"),
             "timezone": meta.get("timezone"),
@@ -908,6 +921,9 @@ class Store:
         kind = rec.get("kind") or "policy"
         if kind not in KINDS:
             raise ValueError(f"unknown kind {kind}")
+        rec["key"] = valid_key(str(rec.get("key") or ""))
+        if rec.get("agent_key"):
+            rec["agent_key"] = valid_key(str(rec["agent_key"]), label="agent_key")
         rec.setdefault("tier", "candidate" if kind == "candidate" else "locked")
         rec.setdefault("approval", "none")
         rec.setdefault("importance", 1.0)
@@ -918,10 +934,12 @@ class Store:
         reason = looks_like_raw_secret(rec.get("body") or "")
         if reason:
             raise ValueError(reason)
+        if rec.get("notify") == "exec":
+            exec_argv(rec.get("exec_cmd") or "")
         if rec.get("sensitivity") == "private":
             rec["path"] = None  # record_path will nest under private
         path = write_markdown(self.paths.vault, rec, aliases, tags)
-        rec["path"] = str(path.relative_to(self.paths.vault))
+        rec["path"] = str(path.relative_to(self.paths.vault.resolve()))
         rec["hash"] = _hash(path.read_text(encoding="utf-8"))
         existing = self.conn.execute(
             "SELECT retrievals, last_retrieved_at, last_run_at, created_at FROM records WHERE key = ?",
@@ -948,7 +966,7 @@ class Store:
             old_path.unlink()
         return path
 
-    def dump_records(self, public: bool = False) -> list[dict[str, Any]]:
+    def dump_records(self, public: bool = True) -> list[dict[str, Any]]:
         rows = [dict(r) for r in self.conn.execute("SELECT * FROM records ORDER BY key")]
         out = []
         for rec in rows:
