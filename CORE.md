@@ -1,5 +1,5 @@
-patb CORE 0.1.2
-You have the `patb` CLI. Before you act, query it.
+patb CORE 0.1.3
+You have the `patb` CLI. Before you act, `patb get protocol.global`. If it misses, continue. Then query for this task.
 You may run patb as many times as this task needs. Fetch only the current step.
 Do not guess keys. Do not dump the catalog. Do not read secrets.env or index.sqlite.
 If patb is missing: export PATH="$HOME/.local/bin:$PATH"

@@ -266,15 +266,53 @@ class PatbTest(unittest.TestCase):
         code, out, _ = self.run_cli("core", "--check")
         self.assertEqual(code, 0)
 
+    def test_core_md_matches_baked_text(self):
+        from patb.core import CORE_TEXT, core_text
+
+        baked = CORE_TEXT if CORE_TEXT.endswith("\n") else CORE_TEXT + "\n"
+        self.assertEqual(core_text(), baked)
+
     def test_core_standing_write_instruction(self):
         code, out, err = self.run_cli("core")
         self.assertEqual(code, 0, err)
-        self.assertIn("patb CORE 0.1.2", out)
+        self.assertIn("patb CORE 0.1.3", out)
+        self.assertIn("patb get protocol.global", out)
+        self.assertIn("If it misses, continue", out)
         self.assertIn("When a standing rule changes", out)
         self.assertIn("patb propose", out)
         self.assertIn("patb set", out)
         self.assertIn("Do not append it to CORE", out)
         self.assertIn("agent profile file", out)
+        self.assertIn("2-4 keywords", out)
+        self.assertIn("numbered list", out)
+        self.assertIn("patb secret set", out)
+
+    def test_vault_example_protocol_global(self):
+        from patb.paths import repo_root
+
+        path = repo_root() / "vault.example" / "protocols" / "global.md"
+        self.assertTrue(path.is_file(), path)
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("key: protocol.global", text)
+        lowered = text.lower()
+        for banned in ("family-first", "sky9", "hsa", "usps"):
+            self.assertNotIn(banned, lowered)
+
+    def test_protocol_global_miss_is_quiet(self):
+        self.assertFalse((self.paths.vault / "protocols" / "global.md").exists())
+        code, out, err = self.run_cli("get", "protocol.global")
+        self.assertEqual(code, 1)
+        self.assertIn("not found", err)
+        self.assertFalse((self.paths.vault / "protocols" / "global.md").exists())
+        store = Store(self.paths)
+        guessed = [m["guessed"] for m in store.misses()]
+        self.assertNotIn("protocol.global", guessed)
+        code, _, _ = self.run_cli("get", "email.usps")
+        self.assertEqual(code, 1)
+        store = Store(self.paths)
+        guessed = [m["guessed"] for m in store.misses()]
+        self.assertIn("email.usps", guessed)
+        self.assertNotIn("protocol.global", guessed)
 
     def test_search_keywords_not_whole_utterance(self):
         self.run_cli(

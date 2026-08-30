@@ -9,7 +9,7 @@ from patb import CORE_VERSION, __version__
 from patb.paths import Paths, repo_root
 
 CORE_TEXT = f"""patb CORE {CORE_VERSION}
-You have the `patb` CLI. Before you act, query it.
+You have the `patb` CLI. Before you act, `patb get protocol.global`. If it misses, continue. Then query for this task.
 You may run patb as many times as this task needs. Fetch only the current step.
 Do not guess keys. Do not dump the catalog. Do not read secrets.env or index.sqlite.
 If patb is missing: export PATH="$HOME/.local/bin:$PATH"

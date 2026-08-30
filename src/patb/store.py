@@ -657,6 +657,9 @@ class Store:
         return rec
 
     def log_miss(self, guessed: str) -> None:
+        # protocol.global is optional; a miss means continue. Do not pollute empty vaults.
+        if guessed.strip() == "protocol.global":
+            return
         self.conn.execute(
             "INSERT INTO misses(guessed, at, resolved) VALUES (?,?,0)",
             (guessed, _utcnow()),

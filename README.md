@@ -44,7 +44,11 @@ Python 3.9+, no pip. Data lives in `/workspace/patb` when `/workspace` exists, o
 patb core
 ```
 
-Put that block in each Bot’s profile (Edit Profile → description). Then two lines that are *this* Bot:
+Paste `patb core` into each agent profile. That is the OS. Do not grow it.
+
+Shared-everyone rules go in `protocol.global`, not CORE and not the profile tail. Change them with `patb set` / `patb propose` on that key. Domain rules stay policies/protocols. Only the bots that do that work fetch them. Before a bot acts it runs `patb get protocol.global`; if the key is missing, it continues. Copy `vault.example` if you want the stub; an empty vault is still valid. Do not put USPS, HSA, or `mail.scan` in global.
+
+Then two lines that are *this* Bot:
 
 ```
 You are Inbox Curator. PATB_AGENT=agent.inbox
@@ -112,12 +116,14 @@ Stay quiet unless there are hot candidates. Never edit CORE.
 | The retail rule | `patb get email.retail` |
 | “What do I do with Family Link emails?” | `patb search "family link"` |
 | “What size were those tires on the Cadenza?” | `patb search "tire size cadenza"` (keywords, not the full sentence) |
+| Shared everyone-rules | `patb get protocol.global` (a miss means continue) |
+| Change everyone-rules | `patb set` / `patb propose` on `protocol.global` |
 | Every silent-delete mail rule | `patb query --domain email --tag silent-delete` |
 | Add or change a rule | `patb set …` or edit the markdown, then `patb` |
 | Address, webhook, API key | `echo VALUE \| patb secret set NAME` then put `${NAME}` in the record |
 | What an agent should paste | `patb core` |
 
-The bot may call `patb` many times in one task. That is the point: fetch this step, not the whole cabinet.
+The bot may call `patb` many times in one task. That is the point: fetch this step, not the whole cabinet. Shared-everyone rules live in `protocol.global`, not CORE and not the profile. Domain rules stay policies/protocols; only the bots that do that work fetch them.
 
 ## Linux / OpenClaw / a box with crontab
 
