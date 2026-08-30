@@ -23,7 +23,7 @@ from patb.tick import due_jobs, install_crontab, tick as run_tick, uninstall_cro
 USAGE = """patb — look up one standing instruction (not the whole catalog).
 
   patb get KEY                 exact key or alias; prints that body
-  patb search "family link"    alias, then keywords
+  patb search "tire size"      2-4 keywords, not the whole sentence
   patb query --domain email --tag silent-delete
   patb set KEY --kind policy --body "..."
   patb propose / patb accept   candidates → locked

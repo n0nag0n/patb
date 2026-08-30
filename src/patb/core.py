@@ -14,6 +14,10 @@ You may run patb as many times as this task needs. Fetch only the current step.
 Do not guess keys. Do not dump the catalog. Do not read secrets.env or index.sqlite.
 If patb is missing: export PATH="$HOME/.local/bin:$PATH"
 
+Look up with `patb search` and 2-4 keywords, not the whole utterance.
+Good: patb search "tire size cadenza"  Bad: the full sentence.
+If it misses, try fewer words. Do not invent a key.
+
 When a record or the situation needs a human choice, present a numbered list.
 Numbers must be unique in that message. Wait.
 

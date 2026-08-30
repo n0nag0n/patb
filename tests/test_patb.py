@@ -11,7 +11,7 @@ from patb.cli import main
 from patb.core import core_text
 from patb.paths import Paths
 from patb.secrets import looks_like_raw_secret, set_secret
-from patb.store import Store
+from patb.store import Store, content_tokens
 from patb.tick import due_jobs, fire_job, tick
 
 
@@ -261,8 +261,71 @@ class PatbTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("patb CORE", out)
         self.assertNotIn("Brain", out)
+        self.assertIn("2-4 keywords", out)
+        self.assertIn("not the whole utterance", out)
         code, out, _ = self.run_cli("core", "--check")
         self.assertEqual(code, 0)
+
+    def test_search_keywords_not_whole_utterance(self):
+        self.run_cli(
+            "set",
+            "identity.vehicle.cadenza",
+            "--kind",
+            "identity",
+            "--alias",
+            "cadenza",
+            "--alias",
+            "tires",
+            "--alias",
+            "tire size",
+            "--alias",
+            "my car",
+            "--summary",
+            "Kia Cadenza tires",
+            "--body",
+            "Kia Cadenza. Tire size 245/40R19 94V.",
+        )
+        for q in (
+            "cadenza",
+            "tire size",
+            "tires",
+            "what size were those tires on the cadenza?",
+            "I can't remember the tire size on my car, do you remember?",
+        ):
+            code, out, err = self.run_cli("search", q)
+            self.assertEqual(code, 0, f"{q!r} missed: {err}")
+            self.assertIn("identity.vehicle.cadenza", out)
+
+        code, out, err = self.run_cli("search", "what is the weather in paris today")
+        self.assertEqual(code, 1)
+        self.assertIn("no hits", err)
+
+    def test_content_tokens_drop_filler(self):
+        self.assertEqual(
+            content_tokens("what size were those tires on the cadenza?"),
+            ["size", "tires", "cadenza"],
+        )
+        self.assertEqual(
+            content_tokens("I can't remember the tire size on my car, do you remember?"),
+            ["tire", "size", "car"],
+        )
+
+    def test_search_utterance_without_english_aliases(self):
+        self.run_cli(
+            "set",
+            "identity.vehicle.cadenza",
+            "--kind",
+            "identity",
+            "--alias",
+            "cadenza",
+            "--body",
+            "Kia Cadenza. Tire size 245/40R19 94V.",
+        )
+        code, out, err = self.run_cli(
+            "search", "what size were those tires on the cadenza?"
+        )
+        self.assertEqual(code, 0, err)
+        self.assertIn("identity.vehicle.cadenza", out)
 
     def test_looks_like_secret(self):
         self.assertIsNotNone(

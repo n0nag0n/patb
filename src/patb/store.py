@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +35,140 @@ TIER_WEIGHT = {
 CIRCLE_WEIGHT = {"family": 1.3, "friend": 1.1, "work": 1.0}
 SHARED_KINDS = {"protocol", "policy", "job", "agent", "identity"}
 EPISODIC_HIDE_DAYS = 30.0
+FTS_TOKENIZE = "porter unicode61"
+_TOKEN_RE = re.compile(r"[a-z0-9]+", re.I)
+# Function words + chat filler. Keep content like size, car, tire, cadenza.
+_STOP = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "but",
+        "if",
+        "then",
+        "so",
+        "than",
+        "too",
+        "to",
+        "of",
+        "in",
+        "on",
+        "for",
+        "with",
+        "at",
+        "from",
+        "by",
+        "as",
+        "into",
+        "over",
+        "after",
+        "before",
+        "about",
+        "up",
+        "out",
+        "off",
+        "down",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "am",
+        "being",
+        "do",
+        "does",
+        "did",
+        "doing",
+        "done",
+        "can",
+        "could",
+        "will",
+        "would",
+        "should",
+        "may",
+        "might",
+        "must",
+        "i",
+        "me",
+        "my",
+        "mine",
+        "you",
+        "your",
+        "yours",
+        "we",
+        "our",
+        "ours",
+        "he",
+        "she",
+        "they",
+        "them",
+        "their",
+        "it",
+        "its",
+        "this",
+        "that",
+        "these",
+        "those",
+        "what",
+        "which",
+        "who",
+        "whom",
+        "how",
+        "when",
+        "where",
+        "why",
+        "not",
+        "no",
+        "yes",
+        "just",
+        "very",
+        "also",
+        "here",
+        "there",
+        "please",
+        "thanks",
+        "thank",
+        "hey",
+        "hi",
+        "hello",
+        "cant",
+        "dont",
+        "wont",
+        "isnt",
+        "arent",
+        "wasnt",
+        "werent",
+        "cannot",
+        "couldnt",
+        "shouldnt",
+        "wouldnt",
+        "remember",
+        "know",
+        "tell",
+        "ask",
+        "think",
+        "guess",
+        "maybe",
+        "something",
+        "anything",
+        "everything",
+        "nothing",
+        "like",
+        "really",
+        "actually",
+        "ok",
+        "okay",
+        "well",
+        "didnt",
+        "had",
+        "has",
+        "have",
+        "having",
+    }
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS records (
@@ -107,6 +242,39 @@ def _as_list(value: Any) -> list[str]:
     if isinstance(value, str) and value:
         return [value]
     return []
+
+
+def content_tokens(q: str, limit: int = 8) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in _TOKEN_RE.findall(q.lower()):
+        if raw in _STOP or len(raw) < 2:
+            continue
+        if raw in seen:
+            continue
+        seen.add(raw)
+        out.append(raw)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _contained(haystack: str, needle: str) -> bool:
+    needle = needle.strip().lower()
+    if len(needle) < 2:
+        return False
+    return (
+        re.search(r"(?<![a-z0-9])" + re.escape(needle) + r"(?![a-z0-9])", haystack) is not None
+    )
+
+
+def _fts_match(tokens: list[str], op: str = "AND") -> str:
+    quoted = []
+    for t in tokens:
+        t = t.replace('"', '""')
+        if t:
+            quoted.append('"' + t + '"')
+    return f" {op} ".join(quoted)
 
 
 def record_path(vault: Path, rec: dict[str, Any]) -> Path:
@@ -186,15 +354,25 @@ class Store:
 
     def _init_schema(self) -> None:
         self.conn.executescript(SCHEMA)
+        rebuilt_fts = False
         try:
-            self.conn.execute(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS records_fts USING fts5("
-                "key, aliases, summary, tags, body, tokenize='unicode61')"
-            )
+            row = self.conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='records_fts'"
+            ).fetchone()
+            sql = row[0] if row else ""
+            if not sql or FTS_TOKENIZE not in sql:
+                self.conn.execute("DROP TABLE IF EXISTS records_fts")
+                self.conn.execute(
+                    "CREATE VIRTUAL TABLE records_fts USING fts5("
+                    f"key, aliases, summary, tags, body, tokenize='{FTS_TOKENIZE}')"
+                )
+                rebuilt_fts = bool(sql)
             self._fts = True
         except sqlite3.OperationalError:
             self._fts = False
         self.conn.commit()
+        if rebuilt_fts and self._fts:
+            self._refill_fts()
 
     def maybe_reindex(self) -> bool:
         db = self.paths.sqlite
@@ -342,18 +520,35 @@ class Store:
                     "INSERT OR IGNORE INTO tags(key, tag) VALUES (?, ?)",
                     (rec["key"], t),
                 )
-        if self._fts:
-            self.conn.execute("DELETE FROM records_fts WHERE key = ?", (rec["key"],))
-            self.conn.execute(
-                "INSERT INTO records_fts(key, aliases, summary, tags, body) VALUES (?,?,?,?,?)",
-                (
-                    rec["key"],
-                    " ".join(aliases),
-                    rec.get("summary") or "",
-                    " ".join(tags),
-                    rec.get("body") or "",
-                ),
-            )
+        self._fts_upsert(rec["key"], aliases, tags, rec.get("summary") or "", rec.get("body") or "")
+
+    def _fts_upsert(
+        self, key: str, aliases: list[str], tags: list[str], summary: str, body: str
+    ) -> None:
+        if not self._fts:
+            return
+        self.conn.execute("DELETE FROM records_fts WHERE key = ?", (key,))
+        self.conn.execute(
+            "INSERT INTO records_fts(key, aliases, summary, tags, body) VALUES (?,?,?,?,?)",
+            (key, " ".join(aliases), summary, " ".join(tags), body),
+        )
+
+    def _refill_fts(self) -> None:
+        if not self._fts:
+            return
+        self.conn.execute("DELETE FROM records_fts")
+        rows = self.conn.execute("SELECT key, summary, body FROM records").fetchall()
+        for rec in rows:
+            aliases = [
+                a[0]
+                for a in self.conn.execute("SELECT alias FROM aliases WHERE key = ?", (rec["key"],))
+            ]
+            tags = [
+                t[0]
+                for t in self.conn.execute("SELECT tag FROM tags WHERE key = ?", (rec["key"],))
+            ]
+            self._fts_upsert(rec["key"], aliases, tags, rec["summary"] or "", rec["body"] or "")
+        self.conn.commit()
 
     def _load_relations_file(self) -> None:
         path = self.paths.relations
@@ -526,6 +721,76 @@ class Store:
         cw = CIRCLE_WEIGHT.get(rec.get("circle") or "", 1.0)
         return tw * imp * (1.0 + math.log1p(ret)) * recency * cw
 
+    def _rows_for_keys(
+        self, keys: Iterable[str], where: str, args: list[Any]
+    ) -> list[dict[str, Any]]:
+        key_list = list(dict.fromkeys(keys))
+        if not key_list:
+            return []
+        ph = ",".join("?" * len(key_list))
+        found = self.conn.execute(
+            f"SELECT * FROM records WHERE key IN ({ph}) AND {where}",
+            key_list + args,
+        ).fetchall()
+        return [dict(r) for r in found]
+
+    def _fts_keys(self, tokens: list[str], op: str, cap: int = 50) -> list[str]:
+        if not self._fts or not tokens:
+            return []
+        match = _fts_match(tokens, op)
+        if not match:
+            return []
+        try:
+            rows = self.conn.execute(
+                "SELECT key FROM records_fts WHERE records_fts MATCH ? LIMIT ?",
+                (match, cap),
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        return [r[0] for r in rows]
+
+    def _keys_in_query(self, q_lower: str) -> list[str]:
+        keys: list[str] = []
+        have: set[str] = set()
+        for alias, key in self.conn.execute("SELECT alias, key FROM aliases"):
+            if key in have:
+                continue
+            if alias and _contained(q_lower, alias):
+                have.add(key)
+                keys.append(key)
+        for (key,) in self.conn.execute("SELECT key FROM records"):
+            if key in have:
+                continue
+            tail = key.split(".")[-1]
+            if tail and _contained(q_lower, tail):
+                have.add(key)
+                keys.append(key)
+        return keys
+
+    def _like_keys(self, phrases: list[str]) -> list[str]:
+        keys: list[str] = []
+        have: set[str] = set()
+        for phrase in phrases:
+            if len(phrase) < 2:
+                continue
+            like = f"%{phrase.lower()}%"
+            found = self.conn.execute(
+                "SELECT key FROM records WHERE lower(key) LIKE ? OR lower(ifnull(summary,'')) LIKE ? "
+                "OR lower(body) LIKE ?",
+                (like, like, like),
+            ).fetchall()
+            for row in found:
+                if row[0] not in have:
+                    have.add(row[0])
+                    keys.append(row[0])
+            for row in self.conn.execute(
+                "SELECT key FROM aliases WHERE alias LIKE ?", (like,)
+            ):
+                if row[0] not in have:
+                    have.add(row[0])
+                    keys.append(row[0])
+        return keys
+
     def search(
         self,
         q: str,
@@ -536,49 +801,25 @@ class Store:
         q = q.strip()
         if not q:
             return []
-        # exact / alias first
         hit = self.get(q, agent=agent, bump=False)
-        if hit and (archive or hit.get("tier") != "episodic" or True):
-            if hit.get("kind") != "candidate" or archive:
-                return [hit]
+        if hit and (hit.get("kind") != "candidate" or archive):
+            return [hit]
         where, args = self._visible_sql(agent, include_candidates=archive, archive=archive)
-        rows: list[dict[str, Any]] = []
-        if self._fts:
-            try:
-                fts = self.conn.execute(
-                    "SELECT key FROM records_fts WHERE records_fts MATCH ? LIMIT 50",
-                    (q,),
-                ).fetchall()
-                keys = [r[0] for r in fts]
-                if keys:
-                    ph = ",".join("?" * len(keys))
-                    found = self.conn.execute(
-                        f"SELECT * FROM records WHERE key IN ({ph}) AND {where}",
-                        keys + args,
-                    ).fetchall()
-                    rows = [dict(r) for r in found]
-            except sqlite3.OperationalError:
-                rows = []
+        q_lower = q.lower()
+        tokens = content_tokens(q)
+        bigrams = [" ".join(tokens[i : i + 2]) for i in range(len(tokens) - 1)]
+
+        # Precise first: aliases / key tails inside the utterance, then AND of keywords.
+        keys = self._keys_in_query(q_lower)
+        keys.extend(self._fts_keys(tokens, "AND"))
+        rows = self._rows_for_keys(keys, where, args)
+        if not rows and bigrams:
+            rows = self._rows_for_keys(self._like_keys(bigrams), where, args)
         if not rows:
-            like = f"%{q.lower()}%"
-            found = self.conn.execute(
-                f"SELECT * FROM records WHERE {where} AND ("
-                "lower(key) LIKE ? OR lower(ifnull(summary,'')) LIKE ? OR lower(body) LIKE ?)",
-                args + [like, like, like],
-            ).fetchall()
-            rows = [dict(r) for r in found]
-            # aliases
-            alias_rows = self.conn.execute(
-                "SELECT key FROM aliases WHERE alias LIKE ?", (like,)
-            ).fetchall()
-            extra_keys = [r[0] for r in alias_rows]
-            have = {r["key"] for r in rows}
-            for k in extra_keys:
-                if k in have:
-                    continue
-                rec = self.conn.execute("SELECT * FROM records WHERE key = ?", (k,)).fetchone()
-                if rec:
-                    rows.append(dict(rec))
+            keys = self._fts_keys(tokens, "OR")
+            if not keys:
+                keys = self._like_keys(tokens or [q_lower])
+            rows = self._rows_for_keys(keys, where, args)
         for rec in rows:
             rec["_score"] = self._score(rec)
         rows.sort(key=lambda r: r["_score"], reverse=True)

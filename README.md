@@ -64,6 +64,8 @@ Or add a markdown file under `/workspace/patb/vault/policies/` and run `patb rei
 
 Try it: `patb get email.usps` or `patb search "informed delivery"`.
 
+Add aliases for how you actually ask (`tire size`, `my car`), not only the official name. Search wants 2–4 keywords. A pasted sentence still hits if those phrases are on the record.
+
 ### 4. Point each Grok routine at one job
 
 Keep the schedules you already use (hourly mail, telegram, briefing, …). Change the **prompt** so the routine does not contain the procedure. The procedure lives in patb.
@@ -95,6 +97,7 @@ One Grok routine ↔ one `job.*` key. Same times as today. The model wakes becau
 |---|---|
 | The USPS rule | `patb get email.usps` |
 | “What do I do with Family Link?” | `patb search "family link"` |
+| “What size were those tires on the Cadenza?” | `patb search "tire size cadenza"` (keywords, not the full sentence) |
 | Every silent-delete mail rule | `patb query --domain email --tag silent-delete` |
 | Add or change a rule | `patb set …` or edit the markdown, then `patb` |
 | Address, webhook, API key | `echo VALUE \| patb secret set NAME` then put `${NAME}` in the record |
@@ -132,7 +135,7 @@ Locked policies do not fade. A bill you pay once a year must not fall out becaus
 |---|---|
 | `patb` | Command map |
 | `patb get KEY` | One decision (exact key, then alias) |
-| `patb search "…"` | Alias, then keywords |
+| `patb search "…"` | 2–4 keywords, then aliases inside the phrase |
 | `patb query --domain email --tag silent-delete` | Several rows, still narrow |
 | `patb set` / `propose` / `accept` | Write a record; candidates need you to accept |
 | `patb secret set NAME` | Value on stdin. No dump command |
