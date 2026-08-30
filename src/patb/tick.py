@@ -85,19 +85,23 @@ def _secret_map(store: Store, rec: dict[str, Any], secrets: dict[str, str]) -> t
     return url, token
 
 
+def _job_local(job: dict[str, Any], when: datetime | None) -> datetime:
+    tz_name = job.get("timezone")
+    if when is None:
+        return _now_in(tz_name)
+    if not tz_name:
+        return when
+    try:
+        return when.astimezone(ZoneInfo(tz_name))
+    except ZoneInfoNotFoundError:
+        return when
+
+
 def due_jobs(store: Store, when: datetime | None = None) -> list[dict[str, Any]]:
     out = []
     for job in store.jobs():
         expr = job.get("schedule") or ""
-        try:
-            local = when or _now_in(job.get("timezone"))
-            if when and job.get("timezone"):
-                try:
-                    local = when.astimezone(ZoneInfo(job["timezone"]))
-                except ZoneInfoNotFoundError:
-                    local = when
-        except CronError:
-            continue
+        local = _job_local(job, when)
         try:
             if not matches(expr, local):
                 continue

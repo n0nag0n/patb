@@ -145,9 +145,6 @@ def names_missing_placeholder(body: str, known_names: Iterable[str] = ()) -> lis
 
 def looks_like_raw_secret(text: str) -> str | None:
     """Return a reason if markdown must not contain this as a raw value."""
-    if EXPAND_RE.search(text) and not any(p.search(EXPAND_RE.sub("", text)) for p in SECRETISH):
-        # has placeholders; still flag leftover raw webhook urls
-        pass
     for pat in SECRETISH:
         if pat.search(text):
             return "looks like a webhook, token, or private key — use `patb secret set NAME` and ${NAME}"
