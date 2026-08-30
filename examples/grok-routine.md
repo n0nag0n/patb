@@ -32,6 +32,22 @@ If the command is missing:
 
 Set the schedule in the Grok UI to whatever you already use (hourly, 8am, …).
 
+## Daily consolidate (Grok Bot)
+
+Required on first run. `job.daily.consolidate` is `notify:exec` / `@daily` and only fires through `patb tick`, which needs OS crontab. Grok Bot has none, so a Grok routine is the clock.
+
+Schedule: **8:00 AM local, all days.**
+
+Paste this as the entire prompt:
+
+```text
+export PATH="$HOME/.local/bin:$PATH"
+patb get job.daily.consolidate
+follow only that body
+```
+
+Stay quiet unless there are hot candidates. Never edit CORE.
+
 ## 3. Profile (once per Bot)
 
 `patb core`, then:

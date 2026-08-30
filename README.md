@@ -91,6 +91,20 @@ Copy-paste templates: [`examples/grok-routine.md`](examples/grok-routine.md).
 
 One Grok routine ↔ one `job.*` key. Same times as today. The model wakes because **Grok** scheduled it, then reads **one** file.
 
+### 5. First run: daily consolidate routine
+
+`job.daily.consolidate` is `notify:exec` / `@daily` and only fires through `patb tick`, which needs OS crontab. Grok Bot has none, so a Grok routine is the clock.
+
+Create one daily Grok routine at **8:00 AM local, all days.** The prompt is only:
+
+```text
+export PATH="$HOME/.local/bin:$PATH"
+patb get job.daily.consolidate
+follow only that body
+```
+
+Stay quiet unless there are hot candidates. Never edit CORE.
+
 ## Everyday use
 
 | You want | You run / you tell the bot |

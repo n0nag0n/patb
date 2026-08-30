@@ -266,6 +266,16 @@ class PatbTest(unittest.TestCase):
         code, out, _ = self.run_cli("core", "--check")
         self.assertEqual(code, 0)
 
+    def test_core_standing_write_instruction(self):
+        code, out, err = self.run_cli("core")
+        self.assertEqual(code, 0, err)
+        self.assertIn("patb CORE 0.1.2", out)
+        self.assertIn("When a standing rule changes", out)
+        self.assertIn("patb propose", out)
+        self.assertIn("patb set", out)
+        self.assertIn("Do not append it to CORE", out)
+        self.assertIn("agent profile file", out)
+
     def test_search_keywords_not_whole_utterance(self):
         self.run_cli(
             "set",

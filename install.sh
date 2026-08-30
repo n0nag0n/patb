@@ -153,6 +153,11 @@ if [[ "$INSTALL_CRON" == 1 ]]; then
   else
     echo "No crontab on this computer (normal on Grok Bot). Skipping --cron." >&2
     echo "Use Grok routines as the clock: see examples/grok-routine.md" >&2
+    echo "First run also needs one daily Grok routine at 8:00 AM whose prompt is only:" >&2
+    echo '  export PATH="$HOME/.local/bin:$PATH"' >&2
+    echo "  patb get job.daily.consolidate" >&2
+    echo "  follow only that body" >&2
+    echo "Stay quiet unless there are hot candidates. Never edit CORE." >&2
   fi
 elif [[ "$YES" != 1 && "$HAS_CRONTAB" == 1 ]]; then
   if [[ "$(ask "Install minute crontab for patb tick? (Linux/OpenClaw only; not Grok Bot)" "no")" =~ ^[yY] ]]; then
@@ -173,6 +178,11 @@ if [[ -d /workspace ]]; then
   echo "  patb get job.<name>"
   echo "  follow only that body"
   echo "Do not add a routine that runs every minute with 'patb due'."
+  echo "First run also needs one daily Grok routine at 8:00 AM whose prompt is only:"
+  echo '  export PATH="$HOME/.local/bin:$PATH"'
+  echo "  patb get job.daily.consolidate"
+  echo "  follow only that body"
+  echo "Stay quiet unless there are hot candidates. Never edit CORE."
   echo "Template: $ROOT/examples/grok-routine.md"
 else
   echo "Linux clock (optional): ./install.sh --cron   or   patb cron install"

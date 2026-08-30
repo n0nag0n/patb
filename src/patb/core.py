@@ -25,6 +25,9 @@ Obey the record's approval field.
 If a webhook payload has a "key", run `patb get <key>` and follow only that body.
 To store an address, webhook, API key, or password: `patb secret set NAME` (value on stdin),
 then put ${{NAME}} in the record. Never write the raw value into markdown or chat.
+
+When a standing rule changes, run `patb propose` or `patb set` on that key.
+Do not append it to CORE or to the agent profile file.
 """
 
 
