@@ -23,6 +23,7 @@ from patb.secrets import (
     names_missing_placeholder,
     set_secret,
 )
+from patb.guard import GuardError
 from patb.store import KINDS, Store
 from patb.tick import due_jobs, install_crontab, tick as run_tick, uninstall_crontab
 
@@ -205,7 +206,11 @@ def cmd_query(ns: argparse.Namespace) -> int:
 
 def cmd_reindex(ns: argparse.Namespace) -> int:
     store = Store(_paths(ns))
-    n = store.reindex()
+    try:
+        n = store.reindex()
+    except (ValueError, GuardError) as exc:
+        sys.stderr.write(str(exc) + "\n")
+        return 2
     sys.stdout.write(f"indexed {n} files\n")
     return 0
 
@@ -239,7 +244,7 @@ def cmd_set(ns: argparse.Namespace) -> int:
     }
     try:
         path = store.set_record(rec, ns.alias or [], ns.tag or [])
-    except ValueError as exc:
+    except (ValueError, GuardError) as exc:
         sys.stderr.write(str(exc) + "\n")
         return 2
     sys.stdout.write(f"wrote {path}\n")
@@ -286,7 +291,8 @@ def cmd_secret(ns: argparse.Namespace) -> int:
 
 def cmd_dump(ns: argparse.Namespace) -> int:
     store = _store(ns)
-    rows = store.dump_records(public=ns.public)
+    include_private = bool(getattr(ns, "include_private", False))
+    rows = store.dump_records(public=not include_private)
     dest = Path(ns.output) if ns.output else None
     text = "".join(json.dumps(r, sort_keys=True) + "\n" for r in rows)
     if dest:
@@ -496,7 +502,13 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("dump", help="JSONL snapshot (placeholders, not secret values)")
     _add_global(s)
     s.add_argument("-o", "--output")
-    s.add_argument("--public", action="store_true")
+    s.add_argument("--public", action="store_true", help="omit private records (default)")
+    s.add_argument(
+        "--include-private",
+        action="store_true",
+        dest="include_private",
+        help="include sensitivity:private records",
+    )
     s.set_defaults(func=cmd_dump)
 
     s = sub.add_parser("import", help="import JSONL into vault + sqlite")

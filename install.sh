@@ -82,6 +82,8 @@ if [[ "$YES" != 1 ]]; then
 fi
 
 mkdir -p "$BIN_DIR" "$HOME_DIR" "$HOME_DIR/vault/private" "$HOME_DIR/vault/inbox"
+chmod 700 "$HOME_DIR"
+chmod 700 "$HOME_DIR/vault/private"
 
 WRAPPER="${BIN_DIR}/patb"
 cat > "$WRAPPER" <<EOF
@@ -109,7 +111,7 @@ EOF
 fi
 
 if [[ ! -f "$HOME_DIR/vault/.gitignore" ]]; then
-  printf 'private/\n*.sqlite\nsecrets.env\n' > "$HOME_DIR/vault/.gitignore"
+  printf 'private/\n*.sqlite\n*.sqlite-*\nsecrets.env\n' > "$HOME_DIR/vault/.gitignore"
 fi
 
 # Seed example vault only when empty of records

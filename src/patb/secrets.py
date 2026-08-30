@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import stat
+import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -19,13 +20,38 @@ PROSE_SECRET_RE = re.compile(r"\bpatb secret ([A-Z][A-Z0-9_]*)\b")
 SECRETISH = [
     re.compile(r"https://api2\.cursor\.sh/automations/webhook/\S+", re.I),
     re.compile(r"Bearer\s+[A-Za-z0-9._\-/=+]{12,}", re.I),
+    re.compile(r"\bsk-ant-[A-Za-z0-9\-_]{16,}"),
     re.compile(r"\bsk-[A-Za-z0-9]{20,}"),
+    re.compile(r"\bghp_[A-Za-z0-9]{20,}"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}", re.I),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\."),
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
 ]
 
 
 class SecretError(ValueError):
     pass
+
+
+def _unescape(value: str) -> str:
+    out: list[str] = []
+    i = 0
+    while i < len(value):
+        if value[i] == "\\" and i + 1 < len(value):
+            nxt = value[i + 1]
+            if nxt == "n":
+                out.append("\n")
+                i += 2
+                continue
+            if nxt == "\\":
+                out.append("\\")
+                i += 2
+                continue
+        out.append(value[i])
+        i += 1
+    return "".join(out)
 
 
 def load(path: Path) -> dict[str, str]:
@@ -43,6 +69,7 @@ def load(path: Path) -> dict[str, str]:
         v = v.strip()
         if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
             v = v[1:-1]
+        v = _unescape(v)
         if NAME_RE.match(k):
             out[k] = v
     return out
@@ -54,8 +81,22 @@ def save(path: Path, data: dict[str, str]) -> None:
     for k in sorted(data):
         v = data[k].replace("\\", "\\\\").replace("\n", "\\n")
         lines.append(f"{k}={v}\n")
-    path.write_text("".join(lines), encoding="utf-8")
-    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    body = "".join(lines)
+    fd, tmp = tempfile.mkstemp(prefix=".secrets.", suffix=".tmp", dir=str(path.parent))
+    try:
+        os.fchmod(fd, stat.S_IRUSR | stat.S_IWUSR)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(body)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def set_secret(paths: Paths, name: str, value: str) -> None:

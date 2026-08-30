@@ -276,7 +276,7 @@ class PatbTest(unittest.TestCase):
     def test_core_standing_write_instruction(self):
         code, out, err = self.run_cli("core")
         self.assertEqual(code, 0, err)
-        self.assertIn("patb CORE 0.1.4", out)
+        self.assertIn("patb CORE 0.1.5", out)
         self.assertIn("patb get protocol.global", out)
         self.assertIn("If it misses, continue", out)
         self.assertIn("When a standing rule changes", out)
