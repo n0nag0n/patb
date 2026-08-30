@@ -40,164 +40,59 @@ FTS_TOKENIZE = "porter unicode61"
 _TOKEN_RE = re.compile(r"[a-z0-9]+", re.I)
 # Function words + chat filler. Keep content like size, car, tire, cadenza.
 _STOP = frozenset(
-    {
-        "a",
-        "an",
-        "the",
-        "and",
-        "or",
-        "but",
-        "if",
-        "then",
-        "so",
-        "than",
-        "too",
-        "to",
-        "of",
-        "in",
-        "on",
-        "for",
-        "with",
-        "at",
-        "from",
-        "by",
-        "as",
-        "into",
-        "over",
-        "after",
-        "before",
-        "about",
-        "up",
-        "out",
-        "off",
-        "down",
-        "is",
-        "are",
-        "was",
-        "were",
-        "be",
-        "been",
-        "am",
-        "being",
-        "do",
-        "does",
-        "did",
-        "doing",
-        "done",
-        "can",
-        "could",
-        "will",
-        "would",
-        "should",
-        "may",
-        "might",
-        "must",
-        "i",
-        "me",
-        "my",
-        "mine",
-        "you",
-        "your",
-        "yours",
-        "we",
-        "our",
-        "ours",
-        "he",
-        "she",
-        "they",
-        "them",
-        "their",
-        "it",
-        "its",
-        "this",
-        "that",
-        "these",
-        "those",
-        "what",
-        "which",
-        "who",
-        "whom",
-        "how",
-        "when",
-        "where",
-        "why",
-        "not",
-        "no",
-        "yes",
-        "just",
-        "very",
-        "also",
-        "here",
-        "there",
-        "please",
-        "thanks",
-        "thank",
-        "hey",
-        "hi",
-        "hello",
-        "cant",
-        "dont",
-        "wont",
-        "isnt",
-        "arent",
-        "wasnt",
-        "werent",
-        "cannot",
-        "couldnt",
-        "shouldnt",
-        "wouldnt",
-        "remember",
-        "know",
-        "tell",
-        "ask",
-        "think",
-        "guess",
-        "maybe",
-        "something",
-        "anything",
-        "everything",
-        "nothing",
-        "like",
-        "really",
-        "actually",
-        "ok",
-        "okay",
-        "well",
-        "didnt",
-        "had",
-        "has",
-        "have",
-        "having",
-    }
+    """
+    a an the and or but if then so than too to of in on for with at from by as
+    into over after before about up out off down is are was were be been am being
+    do does did doing done can could will would should may might must i me my mine
+    you your yours we our ours he she they them their it its this that these those
+    what which who whom how when where why not no yes just very also here there
+    please thanks thank hey hi hello cant dont wont isnt arent wasnt werent cannot
+    couldnt shouldnt wouldnt remember know tell ask think guess maybe something
+    anything everything nothing like really actually ok okay well didnt had has
+    have having
+    """.split()
 )
+WORKING_DEMOTE_DAYS = 14.0
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS records (
-    key TEXT PRIMARY KEY,
-    kind TEXT NOT NULL,
-    domain TEXT,
-    summary TEXT,
-    body TEXT NOT NULL,
-    path TEXT,
-    hash TEXT,
-    schedule TEXT,
-    timezone TEXT,
-    approval TEXT DEFAULT 'none',
-    tier TEXT NOT NULL DEFAULT 'locked',
-    importance REAL NOT NULL DEFAULT 1.0,
-    sensitivity TEXT NOT NULL DEFAULT 'public',
-    agent_key TEXT,
-    notify TEXT,
-    exec_cmd TEXT,
-    webhook_url_secret TEXT,
-    webhook_key_secret TEXT,
-    circle TEXT,
-    retrievals INTEGER NOT NULL DEFAULT 0,
-    last_retrieved_at TEXT,
-    last_run_at TEXT,
-    created_at TEXT,
-    updated_at TEXT
-);
+_RECORD_COLUMNS = (
+    ("key", "TEXT PRIMARY KEY"),
+    ("kind", "TEXT NOT NULL"),
+    ("domain", "TEXT"),
+    ("summary", "TEXT"),
+    ("body", "TEXT NOT NULL"),
+    ("path", "TEXT"),
+    ("hash", "TEXT"),
+    ("schedule", "TEXT"),
+    ("timezone", "TEXT"),
+    ("approval", "TEXT DEFAULT 'none'"),
+    ("tier", "TEXT NOT NULL DEFAULT 'locked'"),
+    ("importance", "REAL NOT NULL DEFAULT 1.0"),
+    ("sensitivity", "TEXT NOT NULL DEFAULT 'public'"),
+    ("agent_key", "TEXT"),
+    ("notify", "TEXT"),
+    ("exec_cmd", "TEXT"),
+    ("webhook_url_secret", "TEXT"),
+    ("webhook_key_secret", "TEXT"),
+    ("circle", "TEXT"),
+    ("retrievals", "INTEGER NOT NULL DEFAULT 0"),
+    ("last_retrieved_at", "TEXT"),
+    ("last_run_at", "TEXT"),
+    ("created_at", "TEXT"),
+    ("updated_at", "TEXT"),
+)
+RECORD_COL_NAMES = tuple(name for name, _ in _RECORD_COLUMNS)
+_KIND_DIR = {
+    "protocol": "protocols",
+    "job": "jobs",
+    "agent": "agents",
+    "identity": "identity",
+}
+
+SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS records (\n    "
+    + ",\n    ".join(f"{n} {t}" for n, t in _RECORD_COLUMNS)
+    + "\n);\n"
+    + """
 CREATE TABLE IF NOT EXISTS aliases (
     alias TEXT PRIMARY KEY,
     key TEXT NOT NULL
@@ -225,10 +120,20 @@ CREATE INDEX IF NOT EXISTS idx_records_domain ON records(domain);
 CREATE INDEX IF NOT EXISTS idx_records_agent ON records(agent_key);
 CREATE INDEX IF NOT EXISTS idx_records_tier ON records(tier);
 """
+)
+
+
+def _iso(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _utcnow() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return _iso(datetime.now(timezone.utc))
+
+
+def _days_ago_iso(days: float, now: datetime | None = None) -> str:
+    now = now or datetime.now(timezone.utc)
+    return _iso(datetime.fromtimestamp(now.timestamp() - days * 86400, tz=timezone.utc))
 
 
 def _hash(text: str) -> str:
@@ -243,6 +148,25 @@ def _as_list(value: Any) -> list[str]:
     if isinstance(value, str) and value:
         return [value]
     return []
+
+
+def _blank_record(**fields: Any) -> dict[str, Any]:
+    rec = {name: None for name in RECORD_COL_NAMES}
+    rec.update(
+        {
+            "kind": "policy",
+            "body": "",
+            "approval": "none",
+            "tier": "locked",
+            "importance": 1.0,
+            "sensitivity": "public",
+            "retrievals": 0,
+            "created_at": _utcnow(),
+            "updated_at": _utcnow(),
+        }
+    )
+    rec.update(fields)
+    return rec
 
 
 def content_tokens(q: str, limit: int = 8) -> list[str]:
@@ -281,32 +205,21 @@ def _fts_match(tokens: list[str], op: str = "AND") -> str:
 def record_path(vault: Path, rec: dict[str, Any]) -> Path:
     key = valid_key(rec["key"])
     kind = rec.get("kind") or "policy"
-    sensitivity = rec.get("sensitivity") or "public"
     agent_key = rec.get("agent_key")
     if agent_key:
         valid_key(str(agent_key), label="agent_key")
     parts = key.split(".")
-    if kind == "protocol":
-        rel = Path("protocols") / ".".join(parts[1:] or parts)
-    elif kind == "policy":
-        if len(parts) >= 2:
-            rel = Path("policies") / parts[0] / "/".join(parts[1:])
-        else:
-            rel = Path("policies") / key
-    elif kind == "job":
-        rel = Path("jobs") / ".".join(parts[1:] or parts)
-    elif kind == "agent":
-        rel = Path("agents") / ".".join(parts[1:] or parts)
-    elif kind == "identity":
-        rel = Path("identity") / ".".join(parts[1:] or parts)
-    elif kind == "working":
-        rel = Path("working") / (rec.get("agent_key") or "shared") / key
-    elif kind == "episodic":
-        rel = Path("episodic") / (rec.get("agent_key") or "shared") / key
+    tail = ".".join(parts[1:] or parts)
+    if kind == "policy":
+        rel = Path("policies") / parts[0] / "/".join(parts[1:]) if len(parts) >= 2 else Path("policies") / key
+    elif kind in ("working", "episodic"):
+        rel = Path(kind) / (agent_key or "shared") / key
+    elif kind in _KIND_DIR:
+        rel = Path(_KIND_DIR[kind]) / tail
     else:
         rel = Path("inbox") / key
     rel = Path(str(rel) + ".md")
-    if sensitivity == "private":
+    if (rec.get("sensitivity") or "public") == "private":
         return vault / "private" / rel
     return vault / rel
 
@@ -446,32 +359,27 @@ class Store:
         reason = looks_like_raw_secret(text)
         if reason:
             raise ValueError(reason)
-        rec = {
-            "key": key,
-            "kind": kind,
-            "domain": meta.get("domain"),
-            "summary": meta.get("summary"),
-            "body": body,
-            "path": str(confine_to_dir(self.paths.vault, path).relative_to(self.paths.vault.resolve())),
-            "hash": _hash(text),
-            "schedule": meta.get("schedule"),
-            "timezone": meta.get("timezone"),
-            "approval": meta.get("approval") or "none",
-            "tier": meta.get("tier") or ("candidate" if kind == "candidate" else "locked"),
-            "importance": float(meta.get("importance") or 1.0),
-            "sensitivity": meta.get("sensitivity") or "public",
-            "agent_key": meta.get("agent") or meta.get("agent_key"),
-            "notify": meta.get("notify"),
-            "exec_cmd": meta.get("exec"),
-            "webhook_url_secret": meta.get("webhook_url_secret"),
-            "webhook_key_secret": meta.get("webhook_key_secret"),
-            "circle": meta.get("circle"),
-            "retrievals": 0,
-            "last_retrieved_at": None,
-            "last_run_at": None,
-            "created_at": _utcnow(),
-            "updated_at": _utcnow(),
-        }
+        rec = _blank_record(
+            key=key,
+            kind=kind,
+            domain=meta.get("domain"),
+            summary=meta.get("summary"),
+            body=body,
+            path=str(confine_to_dir(self.paths.vault, path).relative_to(self.paths.vault.resolve())),
+            hash=_hash(text),
+            schedule=meta.get("schedule"),
+            timezone=meta.get("timezone"),
+            approval=meta.get("approval") or "none",
+            tier=meta.get("tier") or ("candidate" if kind == "candidate" else "locked"),
+            importance=float(meta.get("importance") or 1.0),
+            sensitivity=meta.get("sensitivity") or "public",
+            agent_key=meta.get("agent") or meta.get("agent_key"),
+            notify=meta.get("notify"),
+            exec_cmd=meta.get("exec"),
+            webhook_url_secret=meta.get("webhook_url_secret"),
+            webhook_key_secret=meta.get("webhook_key_secret"),
+            circle=meta.get("circle"),
+        )
         if rec["tier"] not in TIERS:
             rec["tier"] = "locked"
         if rec["sensitivity"] == "private":
@@ -485,33 +393,19 @@ class Store:
             rec["last_run_at"] = rt["last_run_at"]
         self._upsert_record(rec, _as_list(meta.get("aliases")), _as_list(meta.get("tags")))
 
+    def _aliases(self, key: str) -> list[str]:
+        return [r[0] for r in self.conn.execute("SELECT alias FROM aliases WHERE key = ?", (key,))]
+
+    def _tags(self, key: str) -> list[str]:
+        return [r[0] for r in self.conn.execute("SELECT tag FROM tags WHERE key = ?", (key,))]
+
+    def _with_lists(self, rec: dict[str, Any]) -> dict[str, Any]:
+        rec["aliases"] = self._aliases(rec["key"])
+        rec["tags"] = self._tags(rec["key"])
+        return rec
+
     def _upsert_record(self, rec: dict[str, Any], aliases: list[str], tags: list[str]) -> None:
-        cols = [
-            "key",
-            "kind",
-            "domain",
-            "summary",
-            "body",
-            "path",
-            "hash",
-            "schedule",
-            "timezone",
-            "approval",
-            "tier",
-            "importance",
-            "sensitivity",
-            "agent_key",
-            "notify",
-            "exec_cmd",
-            "webhook_url_secret",
-            "webhook_key_secret",
-            "circle",
-            "retrievals",
-            "last_retrieved_at",
-            "last_run_at",
-            "created_at",
-            "updated_at",
-        ]
+        cols = RECORD_COL_NAMES
         placeholders = ",".join("?" * len(cols))
         self.conn.execute(
             f"INSERT OR REPLACE INTO records ({','.join(cols)}) VALUES ({placeholders})",
@@ -552,15 +446,13 @@ class Store:
         self.conn.execute("DELETE FROM records_fts")
         rows = self.conn.execute("SELECT key, summary, body FROM records").fetchall()
         for rec in rows:
-            aliases = [
-                a[0]
-                for a in self.conn.execute("SELECT alias FROM aliases WHERE key = ?", (rec["key"],))
-            ]
-            tags = [
-                t[0]
-                for t in self.conn.execute("SELECT tag FROM tags WHERE key = ?", (rec["key"],))
-            ]
-            self._fts_upsert(rec["key"], aliases, tags, rec["summary"] or "", rec["body"] or "")
+            self._fts_upsert(
+                rec["key"],
+                self._aliases(rec["key"]),
+                self._tags(rec["key"]),
+                rec["summary"] or "",
+                rec["body"] or "",
+            )
         self.conn.commit()
 
     def _load_relations_file(self) -> None:
@@ -622,10 +514,7 @@ class Store:
             clauses.append(f"{p}kind != 'candidate'")
             clauses.append(f"{p}tier != 'candidate'")
         if not archive:
-            cutoff = datetime.now(timezone.utc).timestamp() - EPISODIC_HIDE_DAYS * 86400
-            cutoff_s = datetime.fromtimestamp(cutoff, tz=timezone.utc).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+            cutoff_s = _days_ago_iso(EPISODIC_HIDE_DAYS)
             clauses.append(
                 f"({p}tier != 'episodic' OR coalesce({p}last_retrieved_at, {p}created_at, {p}updated_at) >= ?)"
             )
@@ -650,24 +539,15 @@ class Store:
             if rec["kind"] not in SHARED_KINDS:
                 return None
         if bump:
+            now = _utcnow()
             self.conn.execute(
                 "UPDATE records SET retrievals = retrievals + 1, last_retrieved_at = ? WHERE key = ?",
-                (_utcnow(), rec["key"]),
+                (now, rec["key"]),
             )
             self.conn.commit()
             rec["retrievals"] = (rec["retrievals"] or 0) + 1
-            rec["last_retrieved_at"] = _utcnow()
-        rec["aliases"] = [
-            r[0]
-            for r in self.conn.execute(
-                "SELECT alias FROM aliases WHERE key = ?", (rec["key"],)
-            )
-        ]
-        rec["tags"] = [
-            r[0]
-            for r in self.conn.execute("SELECT tag FROM tags WHERE key = ?", (rec["key"],))
-        ]
-        return rec
+            rec["last_retrieved_at"] = now
+        return self._with_lists(rec)
 
     def log_miss(self, guessed: str) -> None:
         # protocol.global is optional; a miss means continue. Do not pollute empty vaults.
@@ -680,33 +560,14 @@ class Store:
         self.conn.commit()
         # write a candidate stub
         key = "miss." + hashlib.sha256(guessed.encode()).hexdigest()[:10]
-        body = f"Looked for {guessed!r}, no hit. Add an alias or a new record. Do not invent a key."
-        rec = {
-            "key": key,
-            "kind": "candidate",
-            "domain": None,
-            "summary": f"miss: {guessed}",
-            "body": body,
-            "path": None,
-            "hash": None,
-            "schedule": None,
-            "timezone": None,
-            "approval": "none",
-            "tier": "candidate",
-            "importance": 0.2,
-            "sensitivity": "public",
-            "agent_key": None,
-            "notify": None,
-            "exec_cmd": None,
-            "webhook_url_secret": None,
-            "webhook_key_secret": None,
-            "circle": None,
-            "retrievals": 0,
-            "last_retrieved_at": None,
-            "last_run_at": None,
-            "created_at": _utcnow(),
-            "updated_at": _utcnow(),
-        }
+        rec = _blank_record(
+            key=key,
+            kind="candidate",
+            summary=f"miss: {guessed}",
+            body=f"Looked for {guessed!r}, no hit. Add an alias or a new record. Do not invent a key.",
+            tier="candidate",
+            importance=0.2,
+        )
         path = write_markdown(self.paths.vault, rec, [guessed.lower()], ["miss"])
         rec["path"] = str(path.relative_to(self.paths.vault))
         rec["hash"] = _hash(path.read_text(encoding="utf-8"))
@@ -871,7 +732,7 @@ class Store:
             args.append(circle)
         if extra:
             where = where + " AND " + " AND ".join(extra)
-        sql = f"SELECT DISTINCT r.* FROM records r"
+        sql = "SELECT DISTINCT r.* FROM records r"
         if tag:
             sql += " JOIN tags t ON t.key = r.key"
             where += " AND t.tag = ?"
@@ -889,16 +750,7 @@ class Store:
             rows = [r for r in rows if r["key"] in allow]
         for rec in rows:
             rec["_score"] = self._score(rec)
-            rec["aliases"] = [
-                a[0]
-                for a in self.conn.execute(
-                    "SELECT alias FROM aliases WHERE key = ?", (rec["key"],)
-                )
-            ]
-            rec["tags"] = [
-                a[0]
-                for a in self.conn.execute("SELECT tag FROM tags WHERE key = ?", (rec["key"],))
-            ]
+            self._with_lists(rec)
         rows.sort(key=lambda r: r["_score"], reverse=True)
         return rows
 
@@ -972,16 +824,7 @@ class Store:
         for rec in rows:
             if public and rec.get("sensitivity") == "private":
                 continue
-            rec["aliases"] = [
-                a[0]
-                for a in self.conn.execute(
-                    "SELECT alias FROM aliases WHERE key = ?", (rec["key"],)
-                )
-            ]
-            rec["tags"] = [
-                a[0]
-                for a in self.conn.execute("SELECT tag FROM tags WHERE key = ?", (rec["key"],))
-            ]
+            self._with_lists(rec)
             out.append(rec)
         return out
 
@@ -998,8 +841,7 @@ class Store:
     def consolidate(self, now: datetime | None = None) -> dict[str, list[str]]:
         """Demote cold working → episodic. List hot candidates. Never edit CORE."""
         now = now or datetime.now(timezone.utc)
-        cutoff = now.timestamp() - 14 * 86400
-        cutoff_s = datetime.fromtimestamp(cutoff, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cutoff_s = _days_ago_iso(WORKING_DEMOTE_DAYS, now)
         demoted = []
         rows = self.conn.execute(
             "SELECT * FROM records WHERE kind = 'working' OR tier = 'working'"
@@ -1010,24 +852,13 @@ class Store:
             if stamp and stamp < cutoff_s:
                 rec["kind"] = "episodic"
                 rec["tier"] = "episodic"
-                aliases = [
-                    a[0]
-                    for a in self.conn.execute(
-                        "SELECT alias FROM aliases WHERE key = ?", (rec["key"],)
-                    )
-                ]
-                tags = [
-                    a[0]
-                    for a in self.conn.execute(
-                        "SELECT tag FROM tags WHERE key = ?", (rec["key"],)
-                    )
-                ]
-                self.set_record(rec, aliases, tags)
+                self._with_lists(rec)
+                self.set_record(rec, rec["aliases"], rec["tags"])
                 demoted.append(rec["key"])
-        hot = []
-        cands = self.conn.execute(
-            "SELECT * FROM records WHERE tier = 'candidate' AND retrievals >= 3"
-        ).fetchall()
-        for row in cands:
-            hot.append(row["key"])
+        hot = [
+            r["key"]
+            for r in self.conn.execute(
+                "SELECT key FROM records WHERE tier = 'candidate' AND retrievals >= 3"
+            )
+        ]
         return {"demoted": demoted, "hot_candidates": hot}

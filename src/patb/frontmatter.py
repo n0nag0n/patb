@@ -65,7 +65,7 @@ def parse_scalar(raw: str) -> Any:
         return None
     if s and (s[0] in "\"'"):
         return _unquote(s)
-    if s and s[0] in "+-" or s[:1].isdigit():
+    if (s and s[0] in "+-") or s[:1].isdigit():
         try:
             if any(c in s for c in ".eE"):
                 return float(s)

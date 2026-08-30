@@ -68,16 +68,20 @@ def _store(ns: argparse.Namespace, reindex_if_stale: bool = True) -> Store:
     return store
 
 
+def _dump_json(obj: Any, **kwargs: Any) -> None:
+    json.dump(obj, sys.stdout, indent=2, **kwargs)
+    sys.stdout.write("\n")
+
+
 def _print_rec(
     rec: dict[str, Any],
-    secrets: dict[str, str],
     as_json: bool,
     full: bool = True,
     *,
-    expand_secrets: bool = False,
+    body: str | None = None,
 ) -> None:
-    body_raw = rec.get("body") or ""
-    body = expand(body_raw, secrets) if expand_secrets else body_raw
+    if body is None:
+        body = rec.get("body") or ""
     if as_json:
         payload = {
             "key": rec["key"],
@@ -92,8 +96,7 @@ def _print_rec(
         }
         if full:
             payload["body"] = body
-        json.dump(payload, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        _dump_json(payload)
         return
     if full:
         sys.stdout.write(f"# {rec['key']}\n{body}")
@@ -137,8 +140,9 @@ def cmd_get(ns: argparse.Namespace) -> int:
         sys.stderr.write(f"not found: {ns.key}\n")
         return 1
     secrets = load_secrets(store.paths.secrets)
-    _warn_missing_placeholders(rec.get("body") or "", secrets)
-    _print_rec(rec, secrets, _json(ns), full=True, expand_secrets=True)
+    body_raw = rec.get("body") or ""
+    _warn_missing_placeholders(body_raw, secrets)
+    _print_rec(rec, _json(ns), full=True, body=expand(body_raw, secrets))
     return 0
 
 
@@ -146,7 +150,7 @@ def cmd_search(ns: argparse.Namespace) -> int:
     store = _store(ns)
     rows = store.search(ns.q, agent=_agent(ns), archive=ns.archive, limit=ns.limit)
     if _json(ns):
-        json.dump(
+        _dump_json(
             [
                 {
                     "key": r["key"],
@@ -156,17 +160,14 @@ def cmd_search(ns: argparse.Namespace) -> int:
                     "body": (r.get("body") or "") if ns.full else None,
                 }
                 for r in rows
-            ],
-            sys.stdout,
-            indent=2,
+            ]
         )
-        sys.stdout.write("\n")
         return 0
     if not rows:
         sys.stderr.write("no hits (logged as miss/candidate)\n")
         return 1
     for r in rows:
-        _print_rec(r, {}, False, full=ns.full)
+        _print_rec(r, False, full=ns.full)
     return 0
 
 
@@ -183,7 +184,7 @@ def cmd_query(ns: argparse.Namespace) -> int:
         limit=ns.limit,
     )
     if _json(ns):
-        json.dump(
+        _dump_json(
             [
                 {
                     "key": r["key"],
@@ -193,19 +194,16 @@ def cmd_query(ns: argparse.Namespace) -> int:
                     "body": (r.get("body") or "") if ns.full else None,
                 }
                 for r in rows
-            ],
-            sys.stdout,
-            indent=2,
+            ]
         )
-        sys.stdout.write("\n")
         return 0
     for r in rows:
-        _print_rec(r, {}, False, full=ns.full)
+        _print_rec(r, False, full=ns.full)
     return 0 if rows else 1
 
 
 def cmd_reindex(ns: argparse.Namespace) -> int:
-    store = Store(_paths(ns))
+    store = _store(ns, reindex_if_stale=False)
     try:
         n = store.reindex()
     except (ValueError, GuardError) as exc:
@@ -272,8 +270,9 @@ def cmd_secret(ns: argparse.Namespace) -> int:
     paths = _paths(ns)
     paths.ensure_home()
     if ns.secret_cmd == "has":
-        sys.stdout.write("yes\n" if has_secret(paths, ns.name) else "no\n")
-        return 0 if has_secret(paths, ns.name) else 1
+        ok = has_secret(paths, ns.name)
+        sys.stdout.write("yes\n" if ok else "no\n")
+        return 0 if ok else 1
     if ns.secret_cmd == "set":
         value = sys.stdin.read()
         if value.endswith("\n") and value.count("\n") == 1:
@@ -320,8 +319,9 @@ def cmd_due(ns: argparse.Namespace) -> int:
     store = _store(ns)
     jobs = due_jobs(store)
     if _json(ns):
-        json.dump([{"key": j["key"], "schedule": j.get("schedule"), "agent": j.get("agent_key")} for j in jobs], sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        _dump_json(
+            [{"key": j["key"], "schedule": j.get("schedule"), "agent": j.get("agent_key")} for j in jobs]
+        )
     else:
         if not jobs:
             sys.stdout.write("nothing due\n")
@@ -331,13 +331,10 @@ def cmd_due(ns: argparse.Namespace) -> int:
 
 
 def cmd_tick(ns: argparse.Namespace) -> int:
-    paths = _paths(ns)
-    store = Store(paths)
-    store.maybe_reindex()
-    result = run_tick(paths, store)
+    store = _store(ns)
+    result = run_tick(store.paths, store)
     if _json(ns):
-        json.dump(result, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        _dump_json(result)
     else:
         if result.get("skipped"):
             sys.stdout.write(f"skipped: {result['skipped']}\n")
@@ -367,8 +364,7 @@ def cmd_miss(ns: argparse.Namespace) -> int:
     store = _store(ns)
     rows = store.misses()
     if _json(ns):
-        json.dump(rows, sys.stdout, indent=2, default=str)
-        sys.stdout.write("\n")
+        _dump_json(rows, default=str)
         return 0
     for r in rows:
         sys.stdout.write(f"{r['at']}\t{r['guessed']}\n")
@@ -389,8 +385,7 @@ def cmd_consolidate(ns: argparse.Namespace) -> int:
     store = _store(ns)
     result = store.consolidate()
     if _json(ns):
-        json.dump(result, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        _dump_json(result)
     else:
         sys.stdout.write(f"demoted {len(result['demoted'])} working → episodic\n")
         for k in result["hot_candidates"]:
@@ -405,38 +400,41 @@ def cmd_relate(ns: argparse.Namespace) -> int:
     return 0
 
 
-def _add_global(p: argparse.ArgumentParser) -> None:
+def _global_flags() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(add_help=False)
     p.add_argument("--home", default=argparse.SUPPRESS, help="PATB_HOME override")
     p.add_argument("--agent", default=argparse.SUPPRESS, help="PATB_AGENT override")
     p.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="machine-readable output")
+    return p
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="patb", add_help=True, description="Query one decision at a time.")
+    g = _global_flags()
+    p = argparse.ArgumentParser(
+        prog="patb", add_help=True, description="Query one decision at a time.", parents=[g]
+    )
     p.add_argument("--version", action="version", version=f"patb {__version__}")
-    _add_global(p)
     sub = p.add_subparsers(dest="cmd")
 
-    s = sub.add_parser("core", help="print versioned CORE for agent profiles")
-    _add_global(s)
+    def add(name: str, help: str) -> argparse.ArgumentParser:
+        return sub.add_parser(name, help=help, parents=[g])
+
+    s = add("core", "print versioned CORE for agent profiles")
     s.add_argument("--check", action="store_true")
     s.set_defaults(func=cmd_core)
 
-    s = sub.add_parser("get", help="exact key or alias")
-    _add_global(s)
+    s = add("get", "exact key or alias")
     s.add_argument("key")
     s.set_defaults(func=cmd_get)
 
-    s = sub.add_parser("search", help="alias then keywords")
-    _add_global(s)
+    s = add("search", "alias then keywords")
     s.add_argument("q")
     s.add_argument("--archive", action="store_true")
     s.add_argument("--full", action="store_true")
     s.add_argument("--limit", type=int, default=8)
     s.set_defaults(func=cmd_search)
 
-    s = sub.add_parser("query", help="relational filter")
-    _add_global(s)
+    s = add("query", "relational filter")
     s.add_argument("--domain")
     s.add_argument("--tag")
     s.add_argument("--kind", choices=KINDS)
@@ -447,12 +445,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--limit", type=int, default=50)
     s.set_defaults(func=cmd_query)
 
-    s = sub.add_parser("reindex", help="rebuild sqlite from vault markdown")
-    _add_global(s)
-    s.set_defaults(func=cmd_reindex)
+    add("reindex", "rebuild sqlite from vault markdown").set_defaults(func=cmd_reindex)
 
     def set_flags(sp: argparse.ArgumentParser) -> None:
-        _add_global(sp)
         sp.add_argument("key")
         sp.add_argument("--kind", default="policy", choices=KINDS)
         sp.add_argument("--domain")
@@ -474,33 +469,28 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--webhook-key-secret")
         sp.add_argument("--circle", choices=["family", "friend", "work"])
 
-    s = sub.add_parser("set", help="write sqlite + markdown")
+    s = add("set", "write sqlite + markdown")
     set_flags(s)
     s.set_defaults(func=cmd_set)
 
-    s = sub.add_parser("propose", help="write a candidate")
+    s = add("propose", "write a candidate")
     set_flags(s)
     s.set_defaults(func=cmd_propose)
 
-    s = sub.add_parser("accept", help="promote candidate to locked")
-    _add_global(s)
+    s = add("accept", "promote candidate to locked")
     s.add_argument("key")
     s.set_defaults(func=cmd_accept)
 
-    s = sub.add_parser("secret", help="set/has secrets (stdin in; no dump)")
-    _add_global(s)
+    s = add("secret", "set/has secrets (stdin in; no dump)")
     ss = s.add_subparsers(dest="secret_cmd")
-    pset = ss.add_parser("set")
-    _add_global(pset)
+    pset = ss.add_parser("set", parents=[g])
     pset.add_argument("name")
     pset.set_defaults(func=cmd_secret)
-    phas = ss.add_parser("has")
-    _add_global(phas)
+    phas = ss.add_parser("has", parents=[g])
     phas.add_argument("name")
     phas.set_defaults(func=cmd_secret)
 
-    s = sub.add_parser("dump", help="JSONL snapshot (placeholders, not secret values)")
-    _add_global(s)
+    s = add("dump", "JSONL snapshot (placeholders, not secret values)")
     s.add_argument("-o", "--output")
     s.add_argument("--public", action="store_true", help="omit private records (default)")
     s.add_argument(
@@ -511,45 +501,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     s.set_defaults(func=cmd_dump)
 
-    s = sub.add_parser("import", help="import JSONL into vault + sqlite")
-    _add_global(s)
+    s = add("import", "import JSONL into vault + sqlite")
     s.add_argument("file")
     s.set_defaults(func=cmd_import)
 
-    s = sub.add_parser("due", help="jobs that would fire now")
-    _add_global(s)
-    s.set_defaults(func=cmd_due)
+    add("due", "jobs that would fire now").set_defaults(func=cmd_due)
+    add("tick", "fire due jobs (for crontab)").set_defaults(func=cmd_tick)
 
-    s = sub.add_parser("tick", help="fire due jobs (for crontab)")
-    _add_global(s)
-    s.set_defaults(func=cmd_tick)
-
-    s = sub.add_parser("cron", help="install/uninstall user crontab")
-    _add_global(s)
+    s = add("cron", "install/uninstall user crontab")
     cs = s.add_subparsers(dest="cron_cmd")
-    ins = cs.add_parser("install")
-    _add_global(ins)
+    ins = cs.add_parser("install", parents=[g])
     ins.add_argument("--bin")
     ins.set_defaults(func=cmd_cron)
-    uns = cs.add_parser("uninstall")
-    _add_global(uns)
+    uns = cs.add_parser("uninstall", parents=[g])
     uns.add_argument("--bin")
     uns.set_defaults(func=cmd_cron)
 
-    s = sub.add_parser("miss", help="unresolved lookup misses")
-    _add_global(s)
-    s.set_defaults(func=cmd_miss)
+    add("miss", "unresolved lookup misses").set_defaults(func=cmd_miss)
+    add("audit", "fail if secrets leaked into git vault").set_defaults(func=cmd_audit)
+    add("consolidate", "daily memory moves; never edits CORE").set_defaults(func=cmd_consolidate)
 
-    s = sub.add_parser("audit", help="fail if secrets leaked into git vault")
-    _add_global(s)
-    s.set_defaults(func=cmd_audit)
-
-    s = sub.add_parser("consolidate", help="daily memory moves; never edits CORE")
-    _add_global(s)
-    s.set_defaults(func=cmd_consolidate)
-
-    s = sub.add_parser("relate", help="agent/person relation")
-    _add_global(s)
+    s = add("relate", "agent/person relation")
     s.add_argument("src")
     s.add_argument("dest")
     s.add_argument("--circle", default="work", choices=["family", "friend", "work"])
