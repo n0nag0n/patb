@@ -15,14 +15,21 @@ from patb.audit import audit
 from patb.core import check as core_check
 from patb.core import core_text, stamp
 from patb.paths import Paths
-from patb.secrets import SecretError, expand, has_secret, load as load_secrets, set_secret
+from patb.secrets import (
+    SecretError,
+    expand,
+    has_secret,
+    load as load_secrets,
+    names_missing_placeholder,
+    set_secret,
+)
 from patb.store import KINDS, Store
 from patb.tick import due_jobs, install_crontab, tick as run_tick, uninstall_crontab
 
 
 USAGE = """patb — look up one standing instruction (not the whole catalog).
 
-  patb get KEY                 exact key or alias; prints that body
+  patb get KEY                 exact key or alias; expands ${NAME}
   patb search "tire size"      2-4 keywords, not the whole sentence
   patb query --domain email --tag silent-delete
   patb set KEY --kind policy --body "..."
@@ -60,7 +67,16 @@ def _store(ns: argparse.Namespace, reindex_if_stale: bool = True) -> Store:
     return store
 
 
-def _print_rec(rec: dict[str, Any], secrets: dict[str, str], as_json: bool, full: bool = True) -> None:
+def _print_rec(
+    rec: dict[str, Any],
+    secrets: dict[str, str],
+    as_json: bool,
+    full: bool = True,
+    *,
+    expand_secrets: bool = False,
+) -> None:
+    body_raw = rec.get("body") or ""
+    body = expand(body_raw, secrets) if expand_secrets else body_raw
     if as_json:
         payload = {
             "key": rec["key"],
@@ -74,18 +90,25 @@ def _print_rec(rec: dict[str, Any], secrets: dict[str, str], as_json: bool, full
             "tags": rec.get("tags") or [],
         }
         if full:
-            payload["body"] = expand(rec.get("body") or "", secrets)
+            payload["body"] = body
         json.dump(payload, sys.stdout, indent=2)
         sys.stdout.write("\n")
         return
     if full:
-        body = expand(rec.get("body") or "", secrets)
         sys.stdout.write(f"# {rec['key']}\n{body}")
         if not body.endswith("\n"):
             sys.stdout.write("\n")
     else:
         summary = rec.get("summary") or ""
         sys.stdout.write(f"{rec['key']}\t{rec.get('kind')}\t{summary}\n")
+
+
+def _warn_missing_placeholders(body: str, secrets: dict[str, str]) -> None:
+    for name in names_missing_placeholder(body, secrets):
+        sys.stderr.write(
+            f"warn: this record names {name} without ${{{name}}}, so get cannot print it; "
+            "put the placeholder in the record; do not open secrets.env\n"
+        )
 
 
 def cmd_root(_ns: argparse.Namespace) -> int:
@@ -113,14 +136,14 @@ def cmd_get(ns: argparse.Namespace) -> int:
         sys.stderr.write(f"not found: {ns.key}\n")
         return 1
     secrets = load_secrets(store.paths.secrets)
-    _print_rec(rec, secrets, _json(ns), full=True)
+    _warn_missing_placeholders(rec.get("body") or "", secrets)
+    _print_rec(rec, secrets, _json(ns), full=True, expand_secrets=True)
     return 0
 
 
 def cmd_search(ns: argparse.Namespace) -> int:
     store = _store(ns)
     rows = store.search(ns.q, agent=_agent(ns), archive=ns.archive, limit=ns.limit)
-    secrets = load_secrets(store.paths.secrets)
     if _json(ns):
         json.dump(
             [
@@ -129,7 +152,7 @@ def cmd_search(ns: argparse.Namespace) -> int:
                     "kind": r.get("kind"),
                     "summary": r.get("summary"),
                     "score": r.get("_score"),
-                    "body": expand(r.get("body") or "", secrets) if ns.full else None,
+                    "body": (r.get("body") or "") if ns.full else None,
                 }
                 for r in rows
             ],
@@ -142,7 +165,7 @@ def cmd_search(ns: argparse.Namespace) -> int:
         sys.stderr.write("no hits (logged as miss/candidate)\n")
         return 1
     for r in rows:
-        _print_rec(r, secrets, False, full=ns.full)
+        _print_rec(r, {}, False, full=ns.full)
     return 0
 
 
@@ -158,7 +181,6 @@ def cmd_query(ns: argparse.Namespace) -> int:
         archive=ns.archive,
         limit=ns.limit,
     )
-    secrets = load_secrets(store.paths.secrets)
     if _json(ns):
         json.dump(
             [
@@ -167,7 +189,7 @@ def cmd_query(ns: argparse.Namespace) -> int:
                     "kind": r.get("kind"),
                     "summary": r.get("summary"),
                     "path": r.get("path"),
-                    "body": expand(r.get("body") or "", secrets) if ns.full else None,
+                    "body": (r.get("body") or "") if ns.full else None,
                 }
                 for r in rows
             ],
@@ -177,7 +199,7 @@ def cmd_query(ns: argparse.Namespace) -> int:
         sys.stdout.write("\n")
         return 0
     for r in rows:
-        _print_rec(r, secrets, False, full=ns.full)
+        _print_rec(r, {}, False, full=ns.full)
     return 0 if rows else 1
 
 

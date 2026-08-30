@@ -120,7 +120,7 @@ Stay quiet unless there are hot candidates. Never edit CORE.
 | Change everyone-rules | `patb set` / `patb propose` on `protocol.global` |
 | Every silent-delete mail rule | `patb query --domain email --tag silent-delete` |
 | Add or change a rule | `patb set …` or edit the markdown, then `patb` |
-| Address, webhook, API key | `echo VALUE \| patb secret set NAME` then put `${NAME}` in the record |
+| Address, webhook, API key, password, or phone | `echo VALUE \| patb secret set NAME` then put `${NAME}` in the record. Retrieve with `patb get`. There is no `patb secret get` |
 | What an agent should paste | `patb core` |
 
 The bot may call `patb` many times in one task. That is the point: fetch this step, not the whole cabinet. Shared-everyone rules live in `protocol.global`, not CORE and not the profile. Domain rules stay policies/protocols; only the bots that do that work fetch them.
@@ -143,9 +143,31 @@ Each decision is **one record** (key + the text the bot should obey).
 
 - **Markdown** under `$PATB_HOME/vault/` is what you commit to a **private** git repo. Survives the computer dying.
 - **SQLite** (`$PATB_HOME/index.sqlite`) is the live index `get`/`search`/`query` hit. Rebuilt with `patb reindex`. Do not commit it.
-- **Secrets** (`$PATB_HOME/secrets.env`) never go in git. Records may say `${HOME_ADDRESS}`; `patb get` fills it in.
+- **Secrets** (`$PATB_HOME/secrets.env`) never go in git. Store with `patb secret set NAME` (value on stdin), then put `${NAME}` in the record. `patb get` expands it. There is no `patb secret get`. Do not read `secrets.env`. `patb search` and `patb query` (including `--full`) leave `${NAME}` as a placeholder.
 
-`protocol` = how to do a class of work (scan mail). `policy` = what to do with one thing (USPS). `job` = what a scheduled routine should load. Shared across all Bots on the computer. Working notes and “what happened Tuesday” can be tagged to one Bot (`PATB_AGENT`).
+Pattern:
+
+```bash
+echo 'the-number' | patb secret set EXAMPLE_PHONE
+```
+
+Working record body:
+
+```text
+Phone: ${EXAMPLE_PHONE}
+```
+
+Anti-example (will not print the number):
+
+```text
+Phone is patb secret EXAMPLE_PHONE
+```
+
+`patb get` warns: this record names EXAMPLE_PHONE without `${EXAMPLE_PHONE}`, so get cannot print it; put the placeholder in the record; do not open secrets.env. Fix with `${EXAMPLE_PHONE}`. Print a secret in chat only when the human asked for that value.
+
+`protocol` = how to do a class of work (scan mail, pick who to contact). `policy` = what to do with one thing (USPS). `job` = what a scheduled routine should load. Shared across all Bots on the computer. Working notes and “what happened Tuesday” can be tagged to one Bot (`PATB_AGENT`).
+
+A standing protocol is how to pick people. It is not the live roster. Search working notes for the live list; the protocol is not the roster. `vault.example` ships `protocol.household.pick` plus one fake household in `working.example.household` (Cedar household; Phone: `${EXAMPLE_PHONE}`). Alias and tag the working note with the words you will search (a household member’s first name is a tag; FTS will miss a part-member otherwise).
 
 Locked policies do not fade. A bill you pay once a year must not fall out because it was rarely looked up.
 
@@ -154,11 +176,11 @@ Locked policies do not fade. A bill you pay once a year must not fall out becaus
 | Command | What it does |
 |---|---|
 | `patb` | Command map |
-| `patb get KEY` | One decision (exact key, then alias) |
+| `patb get KEY` | One decision (exact key, then alias). Expands `${NAME}` |
 | `patb search "…"` | 2–4 keywords, then aliases inside the phrase |
 | `patb query --domain email --tag silent-delete` | Several rows, still narrow |
 | `patb set` / `propose` / `accept` | Write a record; candidates need you to accept |
-| `patb secret set NAME` | Value on stdin. No dump command |
+| `patb secret set NAME` | Value on stdin. Retrieve with `patb get` on the record that has `${NAME}`. No `patb secret get`, no dump of values |
 | `patb reindex` | Vault → sqlite |
 | `patb dump` / `import` | JSONL backup (no secret values) |
 | `patb core` | Versioned profile block |

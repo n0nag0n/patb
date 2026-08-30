@@ -1,16 +1,19 @@
-"""secrets.env: KEY=value, mode 0600. Expand ${NAME} on read. No dump of values."""
+"""secrets.env: KEY=value, mode 0600. Expand ${NAME} on get. No dump of values."""
 
 from __future__ import annotations
 
 import os
 import re
 import stat
+from collections.abc import Iterable
 from pathlib import Path
 
 from patb.paths import Paths
 
 NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 EXPAND_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)\}")
+# Tight mismatch: prose "patb secret NAME" instead of ${NAME}. Does not match "set"/"has".
+PROSE_SECRET_RE = re.compile(r"\bpatb secret ([A-Z][A-Z0-9_]*)\b")
 
 # Raw values we refuse to store in markdown bodies.
 SECRETISH = [
@@ -78,6 +81,25 @@ def expand(text: str, data: dict[str, str]) -> str:
         return data[key]
 
     return EXPAND_RE.sub(repl, text)
+
+
+def names_missing_placeholder(body: str, known_names: Iterable[str] = ()) -> list[str]:
+    """Names the body refers to without a ${NAME} placeholder.
+
+    Warns only for names `patb secret` has, or the tight prose mismatch
+    ``patb secret NAME``. Random ALL_CAPS words do not count.
+    """
+    placeholders = set(EXPAND_RE.findall(body))
+    mentioned: set[str] = set()
+    for match in PROSE_SECRET_RE.finditer(body):
+        mentioned.add(match.group(1))
+    stripped = EXPAND_RE.sub("", body)
+    for name in known_names:
+        if not NAME_RE.match(name):
+            continue
+        if re.search(r"\b" + re.escape(name) + r"\b", stripped):
+            mentioned.add(name)
+    return sorted(name for name in mentioned if name not in placeholders)
 
 
 def looks_like_raw_secret(text: str) -> str | None:

@@ -10,7 +10,8 @@ from unittest import mock
 from patb.cli import main
 from patb.core import core_text
 from patb.paths import Paths
-from patb.secrets import looks_like_raw_secret, set_secret
+from patb.cli import build_parser
+from patb.secrets import looks_like_raw_secret, names_missing_placeholder, set_secret
 from patb.store import Store, content_tokens
 from patb.tick import due_jobs, fire_job, tick
 
@@ -275,7 +276,7 @@ class PatbTest(unittest.TestCase):
     def test_core_standing_write_instruction(self):
         code, out, err = self.run_cli("core")
         self.assertEqual(code, 0, err)
-        self.assertIn("patb CORE 0.1.3", out)
+        self.assertIn("patb CORE 0.1.4", out)
         self.assertIn("patb get protocol.global", out)
         self.assertIn("If it misses, continue", out)
         self.assertIn("When a standing rule changes", out)
@@ -286,6 +287,11 @@ class PatbTest(unittest.TestCase):
         self.assertIn("2-4 keywords", out)
         self.assertIn("numbered list", out)
         self.assertIn("patb secret set", out)
+        self.assertIn("There is no `patb secret get`", out)
+        self.assertIn("Retrieve is `patb get`", out)
+        self.assertIn("search working records first", out)
+        self.assertEqual(out.count("numbered list"), 1)
+        self.assertNotIn("patb secret get NAME", out)
 
     def test_vault_example_protocol_global(self):
         from patb.paths import repo_root
@@ -380,6 +386,145 @@ class PatbTest(unittest.TestCase):
             looks_like_raw_secret("https://api2.cursor.sh/automations/webhook/xyz")
         )
         self.assertIsNone(looks_like_raw_secret("use ${AGENT_INBOX_WEBHOOK_URL}"))
+
+    def test_get_warns_named_secret_without_placeholder(self):
+        set_secret(self.paths, "EXAMPLE_PHONE", "555-0100")
+        self.run_cli(
+            "set",
+            "working.example.household",
+            "--kind",
+            "working",
+            "--tier",
+            "working",
+            "--body",
+            "Phone is patb secret EXAMPLE_PHONE",
+        )
+        code, out, err = self.run_cli("get", "working.example.household")
+        self.assertEqual(code, 0, err)
+        self.assertIn("warn:", err)
+        self.assertIn("EXAMPLE_PHONE", err)
+        self.assertIn("${EXAMPLE_PHONE}", err)
+        self.assertIn("cannot print", err)
+        self.assertIn("do not open secrets.env", err)
+        self.assertIn("Phone is patb secret EXAMPLE_PHONE", out)
+        self.assertNotIn("555-0100", out)
+        self.assertNotIn("555-0100", err)
+
+    def test_get_expands_placeholder_without_warn(self):
+        set_secret(self.paths, "EXAMPLE_PHONE", "555-0100")
+        self.run_cli(
+            "set",
+            "working.example.household",
+            "--kind",
+            "working",
+            "--tier",
+            "working",
+            "--body",
+            "Phone: ${EXAMPLE_PHONE}",
+        )
+        code, out, err = self.run_cli("get", "working.example.household")
+        self.assertEqual(code, 0, err)
+        self.assertNotIn("warn:", err)
+        self.assertIn("555-0100", out)
+        self.assertNotIn("${EXAMPLE_PHONE}", out)
+
+    def test_search_and_query_full_do_not_expand_secrets(self):
+        set_secret(self.paths, "EXAMPLE_PHONE", "555-0100")
+        self.run_cli(
+            "set",
+            "working.example.household",
+            "--kind",
+            "working",
+            "--tier",
+            "working",
+            "--alias",
+            "cedar household",
+            "--tag",
+            "cedar",
+            "--body",
+            "Phone: ${EXAMPLE_PHONE}",
+        )
+        code, out, err = self.run_cli("search", "cedar household", "--full")
+        self.assertEqual(code, 0, err)
+        self.assertIn("${EXAMPLE_PHONE}", out)
+        self.assertNotIn("555-0100", out)
+        self.assertNotIn("555-0100", err)
+        code, out, err = self.run_cli("--json", "search", "cedar household", "--full")
+        self.assertEqual(code, 0, err)
+        self.assertIn("${EXAMPLE_PHONE}", out)
+        self.assertNotIn("555-0100", out)
+        code, out, err = self.run_cli("query", "--kind", "working", "--full")
+        self.assertEqual(code, 0, err)
+        self.assertIn("${EXAMPLE_PHONE}", out)
+        self.assertNotIn("555-0100", out)
+        code, out, err = self.run_cli("--json", "query", "--kind", "working", "--full")
+        self.assertEqual(code, 0, err)
+        self.assertIn("${EXAMPLE_PHONE}", out)
+        self.assertNotIn("555-0100", out)
+
+    def test_no_secret_get_subcommand(self):
+        set_secret(self.paths, "EXAMPLE_PHONE", "555-0100")
+        buf_out, buf_err = io.StringIO(), io.StringIO()
+        with mock.patch("sys.stdout", buf_out), mock.patch("sys.stderr", buf_err):
+            with self.assertRaises(SystemExit) as cm:
+                main(["--home", str(self.home), "secret", "get", "EXAMPLE_PHONE"])
+        self.assertNotEqual(cm.exception.code, 0)
+        combined = buf_out.getvalue() + buf_err.getvalue()
+        self.assertNotIn("555-0100", combined)
+        secret_parser = None
+        for action in build_parser()._subparsers._group_actions:
+            choices = getattr(action, "choices", None) or {}
+            if "secret" in choices:
+                secret_parser = choices["secret"]
+                break
+        self.assertIsNotNone(secret_parser)
+        secret_subs = []
+        for action in secret_parser._subparsers._group_actions:
+            secret_subs.extend((getattr(action, "choices", None) or {}).keys())
+        self.assertIn("set", secret_subs)
+        self.assertNotIn("get", secret_subs)
+        self.assertNotIn("list", secret_subs)
+
+    def test_names_missing_placeholder_limits_false_positives(self):
+        body = "Phone is patb secret EXAMPLE_PHONE. Also OTHER_TOKEN and ${HOME_ADDRESS}."
+        self.assertEqual(
+            names_missing_placeholder(body, ["HOME_ADDRESS", "EXAMPLE_PHONE"]),
+            ["EXAMPLE_PHONE"],
+        )
+        self.assertEqual(names_missing_placeholder("Call OTHER_TOKEN later", ["EXAMPLE_PHONE"]), [])
+        self.assertEqual(
+            names_missing_placeholder("Phone is patb secret EXAMPLE_PHONE", []),
+            ["EXAMPLE_PHONE"],
+        )
+        self.assertEqual(
+            names_missing_placeholder("Call EXAMPLE_PHONE tonight", ["EXAMPLE_PHONE"]),
+            ["EXAMPLE_PHONE"],
+        )
+        self.assertEqual(names_missing_placeholder("Phone: ${EXAMPLE_PHONE}", ["EXAMPLE_PHONE"]), [])
+
+    def test_vault_example_household_pattern(self):
+        from patb.paths import repo_root
+
+        root = repo_root() / "vault.example"
+        protocol = (root / "protocols" / "household.pick.md").read_text(encoding="utf-8")
+        working = (
+            root / "working" / "shared" / "working.example.household.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("key: protocol.household.pick", protocol)
+        self.assertIn("Search working notes for the live list", protocol)
+        self.assertIn("not the roster", protocol.lower())
+        self.assertNotIn("Alex Cedar", protocol)
+        self.assertIn("key: working.example.household", working)
+        self.assertIn("${EXAMPLE_PHONE}", working)
+        self.assertIn("alex", working.lower())
+        self.assertIn("sam", working.lower())
+        self.assertIn("cedar", working.lower())
+        self.assertIn("tags:", working)
+        self.assertIn("aliases:", working)
+        for path in root.rglob("*.md"):
+            text = path.read_text(encoding="utf-8").lower()
+            self.assertNotIn("sky9", text, path)
+            self.assertNotIn("patb secret get", text.replace("there is no `patb secret get`", ""))
 
 
 if __name__ == "__main__":
