@@ -8,6 +8,7 @@ This file is for people and coding agents working **on this repository**. It is 
 
 - `src/patb/` — the CLI. Python 3.9+, **stdlib only**, no pip, no PyYAML.
 - `tests/` — `unittest`. Run: `PYTHONPATH=src python3 -m unittest discover -s tests -v`
+- `.github/workflows/ci.yml` — same tests on PRs and `master` (Python 3.9–3.13, no pip)
 - `CORE.md` — versioned OS block bots paste. Must match baked `CORE_TEXT` in `src/patb/core.py`.
 - `vault.example/` — seed records (optional `protocol.global`, household pattern, jobs).
 - `install.sh` — clone-local wrapper onto `PATH`; optional user crontab for `patb tick`.

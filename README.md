@@ -196,4 +196,6 @@ Locked policies do not fade. A bill you pay once a year must not fall out becaus
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
+GitHub Actions runs that on pull requests and pushes to `master`, on Python 3.9–3.13. No pip.
+
 The name is a Pinky and the Brain joke for humans. Classic cartoon I watched as a kid. Agents only ever see the command `patb`.
