@@ -56,6 +56,17 @@ You are Inbox Curator. PATB_AGENT=agent.inbox
 
 See `examples/`. After you `git pull` and upgrade patb, run `patb core --check` and replace the pasted block if it is stale.
 
+### When you add a bot
+
+A new bot's profile is empty until someone pastes CORE, so CORE cannot teach a bot that does not have CORE yet. The creator (human or front-door agent) does the paste. Do not put this checklist in CORE.
+
+1. Backup the old profile if it already has rules.
+2. Paste current `patb core` into that bot's profile. That is the OS. Do not grow it.
+3. Two identity lines: `You are NAME. PATB_AGENT=agent.<slug>`
+4. Standing rules go in `patb set` / `patb propose`, not the profile file.
+5. Point each Grok routine at `patb get job.<name>`.
+6. If you have a front-door/chief bot, give it `protocol.patb.onboard` (copy from `vault.example`) so it does this without being reminded.
+
 ### 3. Store a rule
 
 ```bash

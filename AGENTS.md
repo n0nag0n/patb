@@ -40,6 +40,7 @@ Keys look like `email.usps`, `protocol.global`, `working.example.household`. Let
 - Secrets: `echo VALUE | patb secret set NAME`, then put `${NAME}` in the record.
 - Grok Bot has no OS crontab. Each Grok routine’s prompt is `patb get job.<name>` and follow only that body.
 - Linux / OpenClaw: `patb tick` from user crontab fires due jobs (webhook or allowlisted exec).
+- Operators adding Grok bots follow README "When you add a bot". This file is for people working on the repo. Do not add onboard sentences to CORE.md.
 
 ## CORE version bump
 

@@ -50,6 +50,8 @@ Stay quiet unless there are hot candidates. Never edit CORE.
 
 ## 3. Profile (once per Bot)
 
+A newly created bot is not on patb until CORE is pasted.
+
 `patb core`, then:
 
 ```text

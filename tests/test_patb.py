@@ -304,6 +304,18 @@ class PatbTest(unittest.TestCase):
         for banned in ("family-first", "sky9", "hsa", "usps"):
             self.assertNotIn(banned, lowered)
 
+    def test_vault_example_protocol_onboard(self):
+        from patb.paths import repo_root
+
+        path = repo_root() / "vault.example" / "protocols" / "onboard.md"
+        self.assertTrue(path.is_file(), path)
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("key: protocol.patb.onboard", text)
+        lowered = text.lower()
+        self.assertIn("do not put this checklist in core", lowered)
+        self.assertIn("this checklist does not live in core", lowered)
+        self.assertNotIn("sky9", lowered)
+
     def test_protocol_global_miss_is_quiet(self):
         self.assertFalse((self.paths.vault / "protocols" / "global.md").exists())
         code, out, err = self.run_cli("get", "protocol.global")
