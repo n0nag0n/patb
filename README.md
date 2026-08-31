@@ -1,5 +1,11 @@
 # patb
 
+[![Latest release](https://img.shields.io/github/v/release/n0nag0n/patb)](https://github.com/n0nag0n/patb/releases)
+[![Stars](https://img.shields.io/github/stars/n0nag0n/patb)](https://github.com/n0nag0n/patb/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/n0nag0n/patb)](https://github.com/n0nag0n/patb/commits/master)
+[![Python 3.9+ (no pip)](https://img.shields.io/badge/python-3.9%2B%20(no%20pip)-blue)](https://github.com/n0nag0n/patb)
+[![CI](https://github.com/n0nag0n/patb/actions/workflows/ci.yml/badge.svg)](https://github.com/n0nag0n/patb/actions)
+
 **A filing cabinet for AI teammates.** You stop stuffing 150 rules into a Grok Bot profile. The bot looks up the one rule it needs.
 
 If you run Grok Bot (or OpenClaw, Hermes, nanobot) and you keep repeating a rule like an email rule for “forward emails from Bob to Joe” — and the bot still asks what to do with it  — this repo is for you.
