@@ -12,7 +12,7 @@ This file is for people and coding agents working **on this repository**. It is 
 - `CORE.md` — versioned OS block bots paste. Must match baked `CORE_TEXT` in `src/patb/core.py`.
 - `vault.example/` — seed records (optional `protocol.global`, household pattern, jobs).
 - `install.sh` — clone-local wrapper onto `PATH`; optional user crontab for `patb tick`.
-- `examples/` — profile tails and Grok-routine prompts.
+- `examples/` — profile tails, Grok-routine prompts, and the external-tick webhook clock.
 
 Data on a machine (not this git tree):
 
@@ -38,8 +38,8 @@ Keys look like `email.usps`, `protocol.global`, `working.example.household`. Let
 - Find a record: `patb search "two to four keywords"` or `patb query --domain … --tag …`.
 - Write: `patb set` / `patb propose` / `patb accept`. Do not append standing rules to CORE or the agent profile file.
 - Secrets: `echo VALUE | patb secret set NAME`, then put `${NAME}` in the record.
-- Grok Bot has no OS crontab. Each Grok routine’s prompt is `patb get job.<name>` and follow only that body.
-- Linux / OpenClaw: `patb tick` from user crontab fires due jobs (webhook or allowlisted exec).
+- Grok Bot clock is Grok routines **or** an external `patb tick` webhook, **not both on the same job**. Grok Bot has no OS crontab; do not `--cron` there. Each Grok-routine prompt is `patb get job.<name>` and follow only that body. Linux / OpenClaw: `patb tick` from user crontab fires due jobs (webhook or allowlisted exec) **instead of** Grok-scheduled routines for those keys.
+- Dual-write / reindex hazard: `$PATB_HOME/vault/` markdown (canonical dirs) is source of truth; `index.sqlite` is derived. Hand-edit vault, then `patb reindex`. Do not keep a second copy of rules outside those dirs, and do not dual-write standing rules into Grok memory and patb.
 - Operators adding Grok bots follow README "When you add a bot". This file is for people working on the repo. Do not add onboard sentences to CORE.md.
 
 ## CORE version bump

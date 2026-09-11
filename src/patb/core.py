@@ -22,7 +22,7 @@ When a record or the situation needs a human choice, present a numbered list.
 Numbers must be unique in that message. Wait.
 
 Obey the record's approval field.
-If a webhook payload has a "key", run `patb get <key>` and follow only that body.
+If a webhook JSON body is {{"key":"job.…"}} (field name key), run `patb get <key>` and follow only that body.
 To store an address, webhook, API key, password, or phone: `patb secret set NAME` (value on stdin),
 then put ${{NAME}} in the record. Never write the raw value into markdown or chat.
 Retrieve is `patb get` on that record, which expands ${{NAME}}. There is no `patb secret get`.

@@ -198,7 +198,7 @@ class SecurityTest(unittest.TestCase):
     def test_core_still_has_014_secrets_contract(self):
         code, out, err = self.run_cli("core")
         self.assertEqual(code, 0, err)
-        self.assertIn("patb CORE 0.1.5", out)
+        self.assertIn("patb CORE 0.1.6", out)
         self.assertIn("There is no `patb secret get`", out)
         self.assertIn("search working records first", out)
         self.assertIn("patb get protocol.global", out)
