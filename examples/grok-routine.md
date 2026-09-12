@@ -1,8 +1,16 @@
 # Grok Bot routines as the clock
 
-Grok Bot has no OS crontab. `patb tick` will not install. Your Grok **routines** keep the same times they have today. Each routine’s entire prompt should be “fetch this one job.”
+This file is the **Grok-routine-as-clock** path only.
+
+Grok Bot has no OS crontab. Do not install `--cron`. Do not fire these jobs from `patb tick`.
+
+The other clock (Linux / a separate machine running `patb tick`, POSTing a webhook) is [`examples/external-tick.md`](external-tick.md). Pick **one** clock per `job.*` key — not both.
+
+Your Grok **routines** keep the same times they have today. Each routine’s entire prompt should be “fetch this one job.”
 
 Do **not** add a routine that runs every minute (or every hour) with `patb due`. That wakes the model just to ask the clock.
+
+Do **not** set `notify: webhook` on jobs you clock this way.
 
 ## 1. Save the job in patb
 
@@ -34,7 +42,7 @@ Set the schedule in the Grok UI to whatever you already use (hourly, 8am, …).
 
 ## Daily consolidate (Grok Bot)
 
-Required on first run. `job.daily.consolidate` is `notify:exec` / `@daily` and only fires through `patb tick`, which needs OS crontab. Grok Bot has none, so a Grok routine is the clock.
+Required on first run. `job.daily.consolidate` is `notify:exec` / `@daily` and only fires through `patb tick`, which needs OS crontab. Grok Bot has none, so a Grok routine is the clock for consolidate.
 
 Schedule: **8:00 AM local, all days.**
 
@@ -52,10 +60,6 @@ Stay quiet unless there are hot candidates. Never edit CORE.
 
 A newly created bot is not on patb until CORE is pasted.
 
-`patb core`, then:
+`patb core`, then identity lines (see `examples/agent.inbox.md`). CORE already runs `patb get protocol.global` (everyone-rules; miss = continue). Do not paste voice or everyone-rules into CORE or the profile. Do not put standing or dated rule bullets in Grok memory.
 
-```text
-You are Inbox Curator. PATB_AGENT=agent.inbox
-```
-
-Mail rules, GitHub rules, and identity are **not** in the profile. They are `patb get` / `patb search` from the job or from the conversation.
+Mail rules, GitHub rules, and identity details are **not** in the profile. They are `patb get` / `patb search` from the job or from the conversation.

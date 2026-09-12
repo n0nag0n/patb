@@ -24,11 +24,37 @@ What actually happens:
 
 Same idea as a person who does not recite their tax history every morning. They know the cabinet exists, and they open the right folder.
 
+## Grok Bot platform contract
+
+How patb talks to current Grok Bot (2026).
+
+**No OS crontab on the Grok Bot box.** That computer cannot run `crontab`. Do not pass `--cron` to `install.sh` there. Do not add a Grok routine that runs every minute and asks `patb due`.
+
+**One clock per job, not both.** Pick **either**:
+
+1. **Grok routines** — Grok wakes the model on a schedule; the prompt is only `patb get job.<name>`. See [`examples/grok-routine.md`](examples/grok-routine.md).
+2. **External webhook tick** — a Linux box (or a manual curl) runs `patb tick`, which POSTs `{"key":"job.…"}` to a Grok Bot webhook. See [`examples/external-tick.md`](examples/external-tick.md).
+
+Do not schedule the same `job.*` as a Grok routine **and** fire it from `patb tick`. Hybrid “Grok routine plus tick” is not the default.
+
+**External check → webhook wake** saves tokens: a cheap Python tick (or your own monitor) POSTs only when work is due. Waking the model on a timer to poll `patb due` is the failure this tool is meant to avoid.
+
+**Standing rules live in patb only.** Write them with `patb set` / `patb propose`. Grok memory is for soft prefs and ephemeral notes. Do not put standing or dated rule bullets in Grok memory. Do not dual-write the same standing rule into Grok memory and patb.
+
+**`protocol.global` is everyone-rules for every bot.** Before acting, CORE already says: `patb get protocol.global`. A miss means continue — do not invent it. Voice and a quality bar belong there. Domain work (USPS, HSA, `mail.scan`, …) does not. Do not paste voice or everyone-rules into CORE or the agent profile file.
+
+**Two secret systems; do not conflate them.**
+
+| Where | What it is | How you retrieve |
+|---|---|---|
+| Grok Bot **secret-request** | Masked credential UI / env on the Bot computer (product logins, connectors) | The Bot product stores it. It is not `patb get` |
+| patb `${NAME}` | `echo VALUE \| patb secret set NAME`, then `${NAME}` in a vault record | Only `patb get` on that record expands `${NAME}`. There is no `patb secret get` |
+
+**Vault markdown is source of truth; sqlite is derived.** Canonical records live under `$PATB_HOME/vault/` (the dirs `patb set` uses). `index.sqlite` is rebuilt with `patb reindex`. If you hand-edit a vault file, run `patb reindex`. Do not keep a second copy of rules under a non-canonical path.
+
 ## Grok Bot: setup
 
-Grok Bot’s cloud computer **has no OS crontab**. Do not pass `--cron`. Do not add a routine that runs every minute and asks `patb due`. That puts the model back on the clock, which is the failure this tool is meant to avoid.
-
-Your **existing Grok routines are the clock.** Each one should fetch one job and stop.
+Install, paste CORE, store rules. Then pick **one** clock per job (Grok routines, or external tick — not both).
 
 ### 1. Install the CLI on the Bot computer
 
@@ -69,8 +95,8 @@ A new bot's profile is empty until someone pastes CORE, so CORE cannot teach a b
 1. Backup the old profile if it already has rules.
 2. Paste current `patb core` into that bot's profile. That is the OS. Do not grow it.
 3. Two identity lines: `You are NAME. PATB_AGENT=agent.<slug>`
-4. Standing rules go in `patb set` / `patb propose`, not the profile file.
-5. Point each Grok routine at `patb get job.<name>`.
+4. Standing rules go in `patb set` / `patb propose`, not the profile file, not CORE, and not Grok memory (memory is soft prefs / ephemeral notes only). Everyone-rules live in `protocol.global`; CORE already fetches it (miss = continue).
+5. Pick one clock per job: a Grok routine whose prompt is `patb get job.<name>`, **or** an external webhook tick ([`examples/external-tick.md`](examples/external-tick.md)) — not both for the same key.
 6. If you have a front-door/chief bot, give it `protocol.patb.onboard` (copy from `vault.example`) so it does this without being reminded.
 
 ### 3. Store a rule
@@ -88,6 +114,8 @@ Try it: `patb get email.usps` or `patb search "informed delivery"`.
 Add aliases for how you actually ask (`tire size`, `my car`), not only the official name. Search wants 2–4 keywords. A pasted sentence still hits if those phrases are on the record.
 
 ### 4. Point each Grok routine at one job
+
+This is the **Grok-routine clock**. If this job should wake from an external tick instead, skip this step and follow [`examples/external-tick.md`](examples/external-tick.md). Do not do both for the same key.
 
 Keep the schedules you already use (hourly mail, telegram, briefing, …). Change the **prompt** so the routine does not contain the procedure. The procedure lives in patb.
 
@@ -108,9 +136,9 @@ patb set job.hourly.mail --kind job --schedule "0 * * * *" \
 Follow only that record. For each message, patb search the sender/subject, then obey that one result."
 ```
 
-Copy-paste templates: [`examples/grok-routine.md`](examples/grok-routine.md).
+Copy-paste templates: [`examples/grok-routine.md`](examples/grok-routine.md). The other clock: [`examples/external-tick.md`](examples/external-tick.md).
 
-One Grok routine ↔ one `job.*` key. Same times as today. The model wakes because **Grok** scheduled it, then reads **one** file.
+One Grok routine ↔ one `job.*` key. Same times as today. The model wakes because **Grok** scheduled it, then reads **one** file. Do not also `notify: webhook` that job.
 
 ### 5. First run: daily consolidate routine
 
@@ -144,7 +172,9 @@ The bot may call `patb` many times in one task. That is the point: fetch this st
 
 ## Linux / OpenClaw / a box with crontab
 
-On a normal Linux user account, `patb tick` can be the clock (Python only — no model). Idle minutes cost nothing; when a job is due it can POST a webhook or run a command. Webhooks must be public `https` (no redirects, no localhost). `notify: exec` may only run `patb consolidate` (or `reindex`, `audit`, `due`, `core`) — no other binaries.
+This is the **other** clock: `patb tick` from user crontab (Python only — no model). Use it **instead of** Grok-scheduled routines for those jobs, not stacked with them.
+
+On a normal Linux user account, idle minutes cost nothing; when a job is due tick POSTs a webhook or runs an allowlisted command. Webhooks must be public `https` (no redirects, no localhost). `notify: exec` may only run `patb consolidate` (or `reindex`, `audit`, `due`, `core`) — no other binaries.
 
 ```bash
 ./install.sh --yes --cron
@@ -152,14 +182,14 @@ On a normal Linux user account, `patb tick` can be the clock (Python only — no
 
 Grok Bot’s computer cannot do this. Skip `--cron` there.
 
-Webhook wake (optional, later): store the Bot’s routine URL and sender key with `patb secret set`. Tick then knocks on that Bot only when work is due. Not required for the Grok-routine setup above.
+To wake a Grok Bot from this clock, store the Bot’s webhook URL and sender key with `patb secret set`, then set `notify: webhook` on the job. Details: [`examples/external-tick.md`](examples/external-tick.md). Do not also keep a Grok routine on the same job.
 
 ## What gets stored where
 
 Each decision is **one record** (key + the text the bot should obey).
 
-- **Markdown** under `$PATB_HOME/vault/` is what you commit to a **private** git repo. Survives the computer dying.
-- **SQLite** (`$PATB_HOME/index.sqlite`) is the live index `get`/`search`/`query` hit. Rebuilt with `patb reindex`. Do not commit it.
+- **Markdown** under `$PATB_HOME/vault/` (canonical dirs `patb set` uses) is source of truth. Commit to a **private** git repo. Survives the computer dying. Hand-edit a vault file, then `patb reindex`. Do not keep a second copy of rules under a non-canonical path.
+- **SQLite** (`$PATB_HOME/index.sqlite`) is derived. The live index `get`/`search`/`query` hit. Rebuilt with `patb reindex`. Do not commit it.
 - **Secrets** (`$PATB_HOME/secrets.env`) never go in git. Mode `0600`. `$PATB_HOME` is `0700`. Store with `patb secret set NAME` (value on stdin), then put `${NAME}` in the record. `patb get` expands it. There is no `patb secret get`. Do not read `secrets.env`. `patb search` and `patb query` (including `--full`) leave `${NAME}` as a placeholder.
 
 Pattern:
@@ -201,7 +231,7 @@ Locked policies do not fade. A bill you pay once a year must not fall out becaus
 | `patb reindex` | Vault → sqlite |
 | `patb dump` / `import` | JSONL backup (placeholders; omits private unless `--include-private`) |
 | `patb core` | Versioned profile block |
-| `patb due` / `tick` | Linux clock (not Grok Bot) |
+| `patb due` / `tick` | External tick clock (Linux crontab / separate machine — not Grok Bot OS). XOR with Grok routines per job |
 | `patb audit` | Fail if tokens leaked into markdown |
 | `patb consolidate` | Rank old notes down; never edits CORE |
 

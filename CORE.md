@@ -1,4 +1,4 @@
-patb CORE 0.1.5
+patb CORE 0.1.6
 You have the `patb` CLI. Before you act, `patb get protocol.global`. If it misses, continue. Then query for this task.
 You may run patb as many times as this task needs. Fetch only the current step.
 Do not guess keys. Do not dump the catalog. Do not read secrets.env or index.sqlite.
@@ -12,7 +12,7 @@ When a record or the situation needs a human choice, present a numbered list.
 Numbers must be unique in that message. Wait.
 
 Obey the record's approval field.
-If a webhook payload has a "key", run `patb get <key>` and follow only that body.
+If a webhook JSON body is {"key":"job.…"} (field name key), run `patb get <key>` and follow only that body.
 To store an address, webhook, API key, password, or phone: `patb secret set NAME` (value on stdin),
 then put ${NAME} in the record. Never write the raw value into markdown or chat.
 Retrieve is `patb get` on that record, which expands ${NAME}. There is no `patb secret get`.
